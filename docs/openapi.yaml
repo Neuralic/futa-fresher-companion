@@ -1,0 +1,667 @@
+openapi: 3.0.3
+info:
+  title: FUTA Fresher Companion API
+  version: 0.1.0
+  description: |
+    SOURCE OF TRUTH for the API contract.
+    FROZEN: change only through a PR approved by the lead.
+    - api/ must implement exactly these operations (enforced by api/tests/test_contract.py).
+    - web/ types are generated from this file (cd web && npm run gen:api).
+servers:
+  - url: /api/v1
+tags:
+  - name: system
+  - name: auth
+  - name: campus
+  - name: academic
+  - name: announcements
+  - name: admin
+  - name: sync
+
+paths:
+  /health:
+    get:
+      tags: [system]
+      operationId: getHealth
+      summary: Liveness check
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, example: ok }
+
+  /auth/register:
+    post:
+      tags: [auth]
+      operationId: register
+      summary: Create a student account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '201':
+          description: Account created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      summary: Log in and receive an access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Logged in
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /auth/me:
+    get:
+      tags: [auth]
+      operationId: getMe
+      summary: Current user profile
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /campus/buildings:
+    get:
+      tags: [campus]
+      operationId: listBuildings
+      summary: List or search campus buildings and locations
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: type, in: query, schema: { $ref: '#/components/schemas/BuildingType' } }
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Offset' }
+      responses:
+        '200':
+          description: Buildings
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Building' }
+
+  /campus/buildings/{building_id}:
+    get:
+      tags: [campus]
+      operationId: getBuilding
+      summary: Get one building
+      parameters:
+        - { $ref: '#/components/parameters/BuildingId' }
+      responses:
+        '200':
+          description: Building
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Building' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /campus/route:
+    get:
+      tags: [campus]
+      operationId: getRoute
+      summary: Walking route from a point to a building
+      parameters:
+        - { name: from_lat, in: query, required: true, schema: { type: number, format: double } }
+        - { name: from_lng, in: query, required: true, schema: { type: number, format: double } }
+        - { name: to_building_id, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Route
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RouteResponse' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /faculties:
+    get:
+      tags: [academic]
+      operationId: listFaculties
+      summary: List faculties
+      responses:
+        '200':
+          description: Faculties
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Faculty' }
+
+  /departments:
+    get:
+      tags: [academic]
+      operationId: listDepartments
+      summary: List departments
+      parameters:
+        - { name: faculty_id, in: query, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Departments
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Department' }
+
+  /departments/{department_id}:
+    get:
+      tags: [academic]
+      operationId: getDepartment
+      summary: Get one department
+      parameters:
+        - { $ref: '#/components/parameters/DepartmentId' }
+      responses:
+        '200':
+          description: Department
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Department' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /departments/{department_id}/lecturers:
+    get:
+      tags: [academic]
+      operationId: listDepartmentLecturers
+      summary: Lecturers in a department
+      parameters:
+        - { $ref: '#/components/parameters/DepartmentId' }
+      responses:
+        '200':
+          description: Lecturers
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Lecturer' }
+
+  /departments/{department_id}/courses:
+    get:
+      tags: [academic]
+      operationId: listDepartmentCourses
+      summary: Courses in a department
+      parameters:
+        - { $ref: '#/components/parameters/DepartmentId' }
+        - { name: level, in: query, schema: { type: integer, example: 100 } }
+        - { name: semester, in: query, schema: { type: integer, enum: [1, 2] } }
+      responses:
+        '200':
+          description: Courses
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Course' }
+
+  /departments/{department_id}/class-reps:
+    get:
+      tags: [academic]
+      operationId: listDepartmentClassReps
+      summary: Class representatives in a department
+      parameters:
+        - { $ref: '#/components/parameters/DepartmentId' }
+        - { name: level, in: query, schema: { type: integer, example: 100 } }
+      responses:
+        '200':
+          description: Class representatives
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ClassRep' }
+
+  /departments/{department_id}/timetable:
+    get:
+      tags: [academic]
+      operationId: getDepartmentTimetable
+      summary: Timetable entries for a department
+      parameters:
+        - { $ref: '#/components/parameters/DepartmentId' }
+        - { name: level, in: query, schema: { type: integer, example: 100 } }
+        - { name: semester, in: query, schema: { type: integer, enum: [1, 2] } }
+      responses:
+        '200':
+          description: Timetable
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/TimetableEntry' }
+
+  /lecturers:
+    get:
+      tags: [academic]
+      operationId: searchLecturers
+      summary: Search lecturers by name
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Offset' }
+      responses:
+        '200':
+          description: Lecturers
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Lecturer' }
+
+  /lecturers/{lecturer_id}:
+    get:
+      tags: [academic]
+      operationId: getLecturer
+      summary: Get one lecturer
+      parameters:
+        - { name: lecturer_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Lecturer
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Lecturer' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /announcements:
+    get:
+      tags: [announcements]
+      operationId: listAnnouncements
+      summary: List announcements (newest first)
+      parameters:
+        - { name: scope, in: query, schema: { $ref: '#/components/schemas/AnnouncementScope' } }
+        - { name: faculty_id, in: query, schema: { type: string, format: uuid } }
+        - { name: department_id, in: query, schema: { type: string, format: uuid } }
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Offset' }
+      responses:
+        '200':
+          description: Announcements
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Announcement' }
+    post:
+      tags: [announcements]
+      operationId: createAnnouncement
+      summary: Publish an announcement (admin roles only)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AnnouncementCreate' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Announcement' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /announcements/{announcement_id}:
+    get:
+      tags: [announcements]
+      operationId: getAnnouncement
+      summary: Get one announcement
+      parameters:
+        - { name: announcement_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Announcement
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Announcement' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/verify:
+    post:
+      tags: [admin]
+      operationId: verifyRecord
+      summary: Set the verification status of a record (admin roles only)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VerifyRequest' }
+      responses:
+        '204': { description: Updated }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /sync:
+    get:
+      tags: [sync]
+      operationId: sync
+      summary: Everything changed since a timestamp (primes the offline cache in one request)
+      description: |
+        Without `since`, returns the full dataset (`full: true`).
+        With `since`, returns only rows created/updated after it, plus ids deleted since then.
+      parameters:
+        - { name: since, in: query, schema: { type: string, format: date-time } }
+      responses:
+        '200':
+          description: Changes
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SyncResponse' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+    Offset:
+      name: offset
+      in: query
+      schema: { type: integer, minimum: 0, default: 0 }
+    BuildingId:
+      name: building_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    DepartmentId:
+      name: department_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid credentials
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: Not allowed for this role
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: Already exists
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ValidationError:
+      description: Invalid input
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    Error:
+      type: object
+      required: [detail]
+      properties:
+        detail: {}
+
+    UserRole:
+      type: string
+      enum: [student, class_rep, department_admin, faculty_admin, sug, super_admin]
+
+    BuildingType:
+      type: string
+      enum: [faculty, department, lecture_hall, hostel, admin, library, sports, food, health, worship, gate, other]
+
+    AnnouncementScope:
+      type: string
+      enum: [university, sug, faculty, department]
+
+    VerificationStatus:
+      type: string
+      enum: [unverified, verified, outdated]
+
+    Verification:
+      type: object
+      required: [status]
+      properties:
+        status: { $ref: '#/components/schemas/VerificationStatus' }
+        source: { type: string, nullable: true, description: Where this information came from }
+        verified_by: { type: string, format: uuid, nullable: true }
+        verified_at: { type: string, format: date-time, nullable: true }
+
+    RegisterRequest:
+      type: object
+      required: [full_name, email, password]
+      properties:
+        full_name: { type: string, minLength: 2 }
+        email: { type: string, format: email }
+        password: { type: string, minLength: 8 }
+        matric_no: { type: string, nullable: true }
+        department_id: { type: string, format: uuid, nullable: true }
+        level: { type: integer, nullable: true, example: 100 }
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+
+    TokenResponse:
+      type: object
+      required: [access_token, token_type, expires_in]
+      properties:
+        access_token: { type: string }
+        token_type: { type: string, enum: [bearer] }
+        expires_in: { type: integer, description: Seconds until expiry }
+
+    User:
+      type: object
+      required: [id, full_name, email, role]
+      properties:
+        id: { type: string, format: uuid }
+        full_name: { type: string }
+        email: { type: string, format: email }
+        role: { $ref: '#/components/schemas/UserRole' }
+        matric_no: { type: string, nullable: true }
+        department_id: { type: string, format: uuid, nullable: true }
+        faculty_id: { type: string, format: uuid, nullable: true }
+        level: { type: integer, nullable: true }
+
+    Faculty:
+      type: object
+      required: [id, name, verification, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        short_name: { type: string, nullable: true }
+        verification: { $ref: '#/components/schemas/Verification' }
+        updated_at: { type: string, format: date-time }
+
+    Department:
+      type: object
+      required: [id, faculty_id, name, verification, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        faculty_id: { type: string, format: uuid }
+        name: { type: string }
+        short_name: { type: string, nullable: true }
+        hod_name: { type: string, nullable: true }
+        office_location: { type: string, nullable: true }
+        verification: { $ref: '#/components/schemas/Verification' }
+        updated_at: { type: string, format: date-time }
+
+    Lecturer:
+      type: object
+      required: [id, department_id, full_name, verification, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        department_id: { type: string, format: uuid }
+        full_name: { type: string }
+        title: { type: string, nullable: true, example: Dr. }
+        rank: { type: string, nullable: true, example: Senior Lecturer }
+        email: { type: string, nullable: true, description: Official school email only }
+        office_location: { type: string, nullable: true }
+        specialization: { type: string, nullable: true }
+        verification: { $ref: '#/components/schemas/Verification' }
+        updated_at: { type: string, format: date-time }
+
+    Course:
+      type: object
+      required: [id, department_id, code, title, units, level, semester, verification, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        department_id: { type: string, format: uuid }
+        code: { type: string, example: CSC101 }
+        title: { type: string }
+        units: { type: integer }
+        level: { type: integer, example: 100 }
+        semester: { type: integer, enum: [1, 2] }
+        verification: { $ref: '#/components/schemas/Verification' }
+        updated_at: { type: string, format: date-time }
+
+    ClassRep:
+      type: object
+      required: [id, department_id, level, full_name, verification, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        department_id: { type: string, format: uuid }
+        level: { type: integer }
+        full_name: { type: string }
+        contact:
+          type: string
+          nullable: true
+          description: Only present when the class rep has given consent (NDPR)
+        verification: { $ref: '#/components/schemas/Verification' }
+        updated_at: { type: string, format: date-time }
+
+    Building:
+      type: object
+      required: [id, name, type, lat, lng, verification, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        type: { $ref: '#/components/schemas/BuildingType' }
+        description: { type: string, nullable: true }
+        lat: { type: number, format: double }
+        lng: { type: number, format: double }
+        verification: { $ref: '#/components/schemas/Verification' }
+        updated_at: { type: string, format: date-time }
+
+    TimetableEntry:
+      type: object
+      required: [id, department_id, level, semester, course_id, day_of_week, start_time, end_time, verification, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        department_id: { type: string, format: uuid }
+        level: { type: integer }
+        semester: { type: integer, enum: [1, 2] }
+        course_id: { type: string, format: uuid }
+        day_of_week: { type: integer, minimum: 1, maximum: 7, description: 1 = Monday }
+        start_time: { type: string, example: '08:00' }
+        end_time: { type: string, example: '10:00' }
+        venue_building_id: { type: string, format: uuid, nullable: true }
+        venue_note: { type: string, nullable: true }
+        verification: { $ref: '#/components/schemas/Verification' }
+        updated_at: { type: string, format: date-time }
+
+    Announcement:
+      type: object
+      required: [id, title, body, scope, author_id, published_at, verification, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        body: { type: string }
+        scope: { $ref: '#/components/schemas/AnnouncementScope' }
+        faculty_id: { type: string, format: uuid, nullable: true }
+        department_id: { type: string, format: uuid, nullable: true }
+        author_id: { type: string, format: uuid }
+        published_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time, nullable: true }
+        verification: { $ref: '#/components/schemas/Verification' }
+        updated_at: { type: string, format: date-time }
+
+    AnnouncementCreate:
+      type: object
+      required: [title, body, scope]
+      properties:
+        title: { type: string, minLength: 3 }
+        body: { type: string, minLength: 1 }
+        scope: { $ref: '#/components/schemas/AnnouncementScope' }
+        faculty_id: { type: string, format: uuid, nullable: true }
+        department_id: { type: string, format: uuid, nullable: true }
+        expires_at: { type: string, format: date-time, nullable: true }
+
+    VerifyRequest:
+      type: object
+      required: [entity_type, entity_id, status]
+      properties:
+        entity_type:
+          type: string
+          enum: [faculties, departments, lecturers, courses, class_reps, buildings, timetable_entries, announcements]
+        entity_id: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/VerificationStatus' }
+        source: { type: string, nullable: true }
+
+    RouteResponse:
+      type: object
+      required: [distance_m, duration_s, geometry]
+      properties:
+        distance_m: { type: number }
+        duration_s: { type: number }
+        geometry:
+          type: object
+          description: GeoJSON LineString, coordinates as [lng, lat]
+          additionalProperties: true
+
+    SyncResponse:
+      type: object
+      required: [server_time, full, faculties, departments, lecturers, courses, class_reps, buildings, timetable_entries, announcements, deleted]
+      properties:
+        server_time: { type: string, format: date-time, description: Store this and send it as `since` next time }
+        full: { type: boolean, description: True when `since` was omitted (client should replace its cache) }
+        faculties: { type: array, items: { $ref: '#/components/schemas/Faculty' } }
+        departments: { type: array, items: { $ref: '#/components/schemas/Department' } }
+        lecturers: { type: array, items: { $ref: '#/components/schemas/Lecturer' } }
+        courses: { type: array, items: { $ref: '#/components/schemas/Course' } }
+        class_reps: { type: array, items: { $ref: '#/components/schemas/ClassRep' } }
+        buildings: { type: array, items: { $ref: '#/components/schemas/Building' } }
+        timetable_entries: { type: array, items: { $ref: '#/components/schemas/TimetableEntry' } }
+        announcements: { type: array, items: { $ref: '#/components/schemas/Announcement' } }
+        deleted:
+          type: object
+          description: Ids deleted since `since`, keyed by collection name
+          additionalProperties:
+            type: array
+            items: { type: string, format: uuid }

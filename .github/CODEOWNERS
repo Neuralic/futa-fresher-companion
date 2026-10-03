@@ -1,0 +1,18 @@
+# REPLACE the placeholders with real GitHub usernames before enabling branch protection:
+#   @LEAD @BACKEND @FRONTEND @MAPS @DATA @UIUX
+# With "Require review from Code Owners" on, every PR needs approval from one listed owner.
+# Contract/infra files list the lead plus the backend owner so each can approve the other's PRs.
+
+*                          @LEAD
+
+/docs/openapi.yaml         @LEAD @BACKEND
+/db/                       @LEAD @BACKEND
+/.github/                  @LEAD
+/AGENTS.md                 @LEAD
+/CLAUDE.md                 @LEAD
+
+/api/                      @LEAD @BACKEND
+/web/                      @LEAD @FRONTEND
+/web/src/pages/MapPage.tsx @LEAD @MAPS
+/data/                     @LEAD @DATA
+/docs/design/              @LEAD @UIUX
