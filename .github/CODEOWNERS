@@ -1,18 +1,21 @@
-# REPLACE the placeholders with real GitHub usernames before enabling branch protection:
-#   @LEAD @BACKEND @FRONTEND @MAPS @DATA @UIUX
-# With "Require review from Code Owners" on, every PR needs approval from one listed owner.
-# Contract/infra files list the lead plus the backend owner so each can approve the other's PRs.
+# Who must approve a pull request, per path. Each changed file needs one listed owner's approval
+# (the PR author's own approval doesn't count). Later lines override earlier ones.
 
-*                          @LEAD
+# Fallback: the lead reviews anything not listed below
+*                          @Neuralic
 
-/docs/openapi.yaml         @LEAD @BACKEND
-/db/                       @LEAD @BACKEND
-/.github/                  @LEAD
-/AGENTS.md                 @LEAD
-/CLAUDE.md                 @LEAD
+# Contract, database, CI and team rules: lead approval only
+/docs/openapi.yaml         @Neuralic
+/db/                       @Neuralic
+/.github/                  @Neuralic
+/scripts/                  @Neuralic
+/AGENTS.md                 @Neuralic
+/CLAUDE.md                 @Neuralic
 
-/api/                      @LEAD @BACKEND
-/web/                      @LEAD @FRONTEND
-/web/src/pages/MapPage.tsx @LEAD @MAPS
-/data/                     @LEAD @DATA
-/docs/design/              @LEAD @UIUX
+# Application code: any of the three developers can approve each other's PRs
+/api/                      @Neuralic @oladipsinigami @Abdulqudus2308
+/web/                      @Neuralic @oladipsinigami @Abdulqudus2308
+
+# Roles not filled yet (lead for now). Add the owner here when someone takes the role.
+/data/                     @Neuralic
+/docs/design/              @Neuralic
