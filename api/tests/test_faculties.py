@@ -110,6 +110,20 @@ def test_shape_matches_openapi_schema():
     assert set(faculty["verification"]) == set(schemas["Verification"]["properties"])
 
 
+def test_response_is_publicly_cacheable():
+    response, _ = _get_faculties([_row()])
+
+    assert response.headers["Cache-Control"] == (
+        "public, max-age=60, s-maxage=300, stale-while-revalidate=600"
+    )
+
+
+def test_health_is_not_cacheable():
+    response = TestClient(app).get("/api/v1/health")
+
+    assert "Cache-Control" not in response.headers
+
+
 def test_deleted_rows_are_excluded_and_results_sorted_by_name():
     table = [
         _row(id=FOS_ID, name="Faculty of Science", short_name="FOS"),
