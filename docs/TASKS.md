@@ -23,3 +23,4 @@ Put names next to roles. Everyone works only in their own folder and opens PRs (
 - `/sync` endpoint, then wire the Dexie offline cache to real data
 - Map page: MapLibre (lazy-loaded) + campus tiles, then routing
 - Admin panel + verification workflow
+- Backend auto-deploy verified from neuralicstudio/futa-fresher-companion (Oct 20)
