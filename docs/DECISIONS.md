@@ -38,6 +38,7 @@
   - Cursors expire after 24 hours and return 422, so the client restarts from its stored `since`.
   - The web client (`offline.ts`) must loop on `next_cursor` before the API ships with paging.
     Until then, large syncs silently lose rows.
+- **Launch decision:** no scheduled announcements for launch. The create endpoint will force `published_at = now()`. Clients hide expired announcements locally, and the API does not filter on `expires_at`.
 - **Open:** publishing and expiry happen with time, and `updated_at` does not change, so a
   scheduled announcement is not sent when it is published. Expired announcements are never
   tombstoned. Needs a decision (for example, sort announcements by `greatest(updated_at,
