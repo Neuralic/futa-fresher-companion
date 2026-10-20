@@ -1,6 +1,8 @@
 import { lazy, Suspense, useEffect } from 'react';
 import { Link, Route, Routes } from 'react-router-dom';
+import FirstSyncScreen from './components/FirstSyncScreen';
 import OfflineBanner from './components/OfflineBanner';
+import { useSyncProgress } from './lib/syncStatus';
 import Academics from './pages/Academics';
 import Announcements from './pages/Announcements';
 import Home from './pages/Home';
@@ -11,6 +13,9 @@ const MapPage = lazy(() => import('./pages/MapPage'));
 const Admin = lazy(() => import('./pages/Admin'));
 
 export default function App() {
+  const sync = useSyncProgress();
+  const firstSync = sync.running && sync.firstRun;
+
   useEffect(() => {
     // Prime the offline cache in the background. Fails silently when offline / API not ready.
     if (navigator.onLine) {
@@ -29,16 +34,20 @@ export default function App() {
         <Link to="/login">Login</Link>
       </nav>
       <main>
-        <Suspense fallback={<p className="muted">Loading…</p>}>
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/map" element={<MapPage />} />
-            <Route path="/academics" element={<Academics />} />
-            <Route path="/announcements" element={<Announcements />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/admin" element={<Admin />} />
-          </Routes>
-        </Suspense>
+        {firstSync ? (
+          <FirstSyncScreen progress={sync} />
+        ) : (
+          <Suspense fallback={<p className="muted">Loading…</p>}>
+            <Routes>
+              <Route path="/" element={<Home />} />
+              <Route path="/map" element={<MapPage />} />
+              <Route path="/academics" element={<Academics />} />
+              <Route path="/announcements" element={<Announcements />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/admin" element={<Admin />} />
+            </Routes>
+          </Suspense>
+        )}
       </main>
     </>
   );

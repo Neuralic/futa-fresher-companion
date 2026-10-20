@@ -336,9 +336,26 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Everything changed since a timestamp (primes the offline cache in one request)
-         * @description Without `since`, returns the full dataset (`full: true`).
-         *     With `since`, returns only rows created/updated after it, plus ids deleted since then.
+         * Everything changed since a timestamp, in pages (primes the offline cache)
+         * @description Without `since` or `cursor`, starts a full sync: the first page has `full: true`.
+         *     With `since`, returns rows changed after it, plus ids deleted since then.
+         *
+         *     Paging: if `next_cursor` is not null, call again with `cursor` set to it. A `cursor`
+         *     takes precedence over `since`. Keep calling until `next_cursor` is null.
+         *     Clients must treat `cursor` as an opaque string. Cursors expire after 24 hours (422).
+         *
+         *     Order: collections come in a fixed order (faculties, departments, lecturers, courses,
+         *     class_reps, buildings, timetable_entries, announcements). Inside a collection, rows are
+         *     in (updated_at, id) order. A page fills across collections in that order.
+         *     Each page reads only rows changed up to the snapshot time of the first page. Changes made
+         *     after it arrive in the next sync.
+         *
+         *     Soft-deleted rows count as one row each toward `limit`. They appear only as ids in
+         *     `deleted`, never as full rows.
+         *
+         *     Store `server_time` only from the last page (the page where `next_cursor` is null).
+         *     It is the snapshot time minus a 60-second overlap, so the next sync re-fetches up to
+         *     60 seconds of changes. Saving rows by id is idempotent, so the repeats are harmless.
          */
         get: operations["sync"];
         put?: never;
@@ -567,11 +584,13 @@ export interface components {
         SyncResponse: {
             /**
              * Format: date-time
-             * @description Store this and send it as `since` next time
+             * @description Store and send as `since` next time, from the last page only (where next_cursor is null). Already includes a 60-second overlap.
              */
             server_time: string;
-            /** @description True when `since` was omitted (client should replace its cache) */
+            /** @description True only on the first page of a full sync. Clients clear their cache on that page only. */
             full: boolean;
+            /** @description Send as `cursor` to get the next page. Null on the last page. Opaque: do not parse it. */
+            next_cursor: string | null;
             faculties: components["schemas"]["Faculty"][];
             departments: components["schemas"]["Department"][];
             lecturers: components["schemas"]["Lecturer"][];
@@ -580,7 +599,7 @@ export interface components {
             buildings: components["schemas"]["Building"][];
             timetable_entries: components["schemas"]["TimetableEntry"][];
             announcements: components["schemas"]["Announcement"][];
-            /** @description Ids deleted since `since`, keyed by collection name */
+            /** @description Ids of rows deleted in this page's range, keyed by collection name. Remove them from the cache. */
             deleted: {
                 [key: string]: string[];
             };
@@ -1128,6 +1147,10 @@ export interface operations {
         parameters: {
             query?: {
                 since?: string;
+                /** @description Opaque value from `next_cursor`. Takes precedence over `since`. */
+                cursor?: string;
+                /** @description Maximum rows in this page, across all collections. */
+                limit?: number;
             };
             header?: never;
             path?: never;
@@ -1144,6 +1167,7 @@ export interface operations {
                     "application/json": components["schemas"]["SyncResponse"];
                 };
             };
+            422: components["responses"]["ValidationError"];
         };
     };
 }
