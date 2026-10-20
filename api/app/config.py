@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     database_url: str = "postgresql://futa:futa_dev_password@localhost:5432/futa"
     jwt_secret: str = _DEV_SECRET
     jwt_expires_minutes: int = 60 * 24 * 7
+    # Signs /sync cursors so a client cannot change its position or snapshot.
+    sync_cursor_secret: str = _DEV_SECRET
     cors_origins: str = "http://localhost:5173"
 
     @property
@@ -21,3 +23,5 @@ settings = Settings()
 
 if settings.env == "production" and settings.jwt_secret == _DEV_SECRET:
     raise RuntimeError("JWT_SECRET must be set to a strong secret in production")
+if settings.env == "production" and settings.sync_cursor_secret == _DEV_SECRET:
+    raise RuntimeError("SYNC_CURSOR_SECRET must be set to a strong secret in production")
