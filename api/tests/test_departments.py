@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 
 from app.db import get_conn
 from app.main import app
-from app.routers.academic import MAX_LIST_ROWS
+from app.routers.academic import MAX_LIST_ROWS, TIMETABLE_MAX_ROWS
 
 SPEC_PATH = pathlib.Path(__file__).resolve().parents[2] / "docs" / "openapi.yaml"
 SPEC = yaml.safe_load(SPEC_PATH.read_text(encoding="utf-8"))
@@ -52,10 +52,12 @@ class FakeDb:
     def __init__(self, **tables):
         self.tables = tables
         self.queries = []
+        self.params = []
 
     def execute(self, sql, params=None):
         params = params or {}
         self.queries.append(sql)
+        self.params.append(params)
         table = re.search(r"FROM (\w+)", sql).group(1)
         rows = [row for row in self.tables.get(table, []) if row["deleted_at"] is None]
         for name, value in params.items():
@@ -479,6 +481,52 @@ def test_lists_are_capped_at_max_rows():
     assert len(response.json()) == MAX_LIST_ROWS
 
 
+def test_timetable_is_capped_at_its_own_higher_limit():
+    entries = [
+        _entry(id=uuid.uuid4(), start_time=time(8, 0), end_time=time(9, 0))
+        for _ in range(TIMETABLE_MAX_ROWS + 1)
+    ]
+
+    response, db = _get(
+        f"/api/v1/departments/{CSC_ID}/timetable",
+        departments=[_department()],
+        timetable_entries=entries,
+    )
+
+    assert db.params[1]["limit"] == 2000
+    assert len(response.json()) == TIMETABLE_MAX_ROWS
+
+
+def test_timetable_returns_more_than_the_general_list_cap():
+    # A department can have more timetable rows than the 500-row cap used for other lists.
+    entries = [
+        _entry(id=uuid.uuid4(), start_time=time(8, 0), end_time=time(9, 0))
+        for _ in range(MAX_LIST_ROWS + 100)
+    ]
+
+    response, _ = _get(
+        f"/api/v1/departments/{CSC_ID}/timetable",
+        departments=[_department()],
+        timetable_entries=entries,
+    )
+
+    assert len(response.json()) == MAX_LIST_ROWS + 100
+
+
+def test_other_lists_keep_the_general_cap():
+    paths = [
+        f"/api/v1/departments/{CSC_ID}/lecturers",
+        f"/api/v1/departments/{CSC_ID}/courses",
+        f"/api/v1/departments/{CSC_ID}/class-reps",
+        "/api/v1/departments",
+    ]
+
+    for path in paths:
+        _, db = _get(path, departments=[_department()])
+
+        assert db.params[-1]["limit"] == MAX_LIST_ROWS, path
+
+
 @pytest.mark.parametrize(
     "path",
     [
@@ -486,7 +534,6 @@ def test_lists_are_capped_at_max_rows():
         f"/api/v1/departments/{CSC_ID}",
         f"/api/v1/departments/{CSC_ID}/lecturers",
         f"/api/v1/departments/{CSC_ID}/courses",
-        f"/api/v1/departments/{CSC_ID}/class-reps",
         f"/api/v1/departments/{CSC_ID}/timetable",
     ],
 )
@@ -496,7 +543,6 @@ def test_department_reads_are_publicly_cacheable(path):
         departments=[_department()],
         lecturers=[],
         courses=[],
-        class_reps=[],
         timetable_entries=[],
     )
 
@@ -504,3 +550,14 @@ def test_department_reads_are_publicly_cacheable(path):
     assert response.headers["Cache-Control"] == (
         "public, max-age=60, s-maxage=300, stale-while-revalidate=600"
     )
+
+
+def test_class_reps_use_short_cache_because_they_carry_contact_details():
+    response, _ = _get(
+        f"/api/v1/departments/{CSC_ID}/class-reps",
+        departments=[_department()],
+        class_reps=[],
+    )
+
+    assert response.status_code == 200
+    assert response.headers["Cache-Control"] == ("public, max-age=0, s-maxage=30, must-revalidate")

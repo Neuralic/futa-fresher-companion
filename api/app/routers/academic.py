@@ -6,7 +6,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query
 from psycopg import Connection
 
-from app.caching import public_cache
+from app.caching import public_cache, short_public_cache
 from app.db import get_conn
 from app.stubs import not_implemented
 
@@ -18,6 +18,8 @@ Level = Annotated[int | None, Query(ge=100, le=700)]
 Semester = Annotated[int | None, Query(ge=1, le=2)]
 # The contract has no limit/offset on these lists, so each one is capped instead.
 MAX_LIST_ROWS = 500
+# 5 levels x 2 semesters can exceed 500 timetable rows for one department, so it has its own cap.
+TIMETABLE_MAX_ROWS = 2000
 
 
 # Public and the same for every caller, so it is safe to cache. Do not add to auth or user routes.
@@ -117,7 +119,8 @@ def list_department_courses(
     return [_course(row) for row in rows]
 
 
-@router.get("/departments/{department_id}/class-reps", dependencies=[Depends(public_cache)])
+# Contact is personal data (NDPR): a withdrawn consent must leave shared caches quickly.
+@router.get("/departments/{department_id}/class-reps", dependencies=[Depends(short_public_cache)])
 def list_department_class_reps(department_id: uuid.UUID, conn: DbConn, level: Level = None):
     _find_department(conn, department_id)
     rows = conn.execute(
@@ -159,7 +162,7 @@ def get_department_timetable(
             "department_id": department_id,
             "level": level,
             "semester": semester,
-            "limit": MAX_LIST_ROWS,
+            "limit": TIMETABLE_MAX_ROWS,
         },
     ).fetchall()
     return [_timetable_entry(row) for row in rows]
