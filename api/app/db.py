@@ -32,6 +32,8 @@ def get_pool() -> ConnectionPool:
                 min_size=0,
                 # Serverless: each instance uses at most 2 connections; PgBouncer multiplexes them.
                 max_size=2,
+                # Fail a checkout after 5s when all connections are busy, not the 30s default.
+                timeout=5,
                 kwargs={
                     "row_factory": dict_row,
                     # PgBouncer in transaction mode cannot reuse server-side prepared statements.

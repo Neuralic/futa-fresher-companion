@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from psycopg import Connection
 
+from app.caching import public_cache
 from app.db import get_conn
 from app.stubs import not_implemented
 
@@ -13,7 +14,8 @@ router = APIRouter(tags=["academic"])
 DbConn = Annotated[Connection, Depends(get_conn)]
 
 
-@router.get("/faculties")
+# Public and the same for every caller, so it is safe to cache. Do not add to auth or user routes.
+@router.get("/faculties", dependencies=[Depends(public_cache)])
 def list_faculties(conn: DbConn):
     rows = conn.execute(
         """
