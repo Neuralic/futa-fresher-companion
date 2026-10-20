@@ -1,13 +1,7 @@
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
-
-const API = '/api/v1/';
-const isCacheableApi = ({ url }: { url: URL }) =>
-  url.pathname.startsWith(API) &&
-  !url.pathname.startsWith(API + 'auth') &&
-  !url.pathname.startsWith(API + 'admin') &&
-  !url.pathname.startsWith(API + 'sync');
+import { isAnnouncementsRequest, isCacheablePublicApi } from './sw-matchers';
 
 export default defineConfig({
   plugins: [
@@ -35,7 +29,8 @@ export default defineConfig({
         runtimeCaching: [
           {
             // Announcements: freshness matters most, fall back to cache when offline/slow.
-            urlPattern: ({ url }) => url.pathname.startsWith(API + 'announcements'),
+            // The matchers come from sw-matchers.ts: Workbox copies them as text (see that file).
+            urlPattern: isAnnouncementsRequest,
             handler: 'NetworkFirst',
             options: {
               cacheName: 'api-announcements',
@@ -45,7 +40,7 @@ export default defineConfig({
           },
           {
             // Everything else public (departments, lecturers, buildings...): show cache, refresh quietly.
-            urlPattern: isCacheableApi,
+            urlPattern: isCacheablePublicApi,
             handler: 'StaleWhileRevalidate',
             options: {
               cacheName: 'api-reference',
