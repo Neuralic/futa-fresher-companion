@@ -1,7 +1,6 @@
 """Department read endpoints with a fake DB connection (no Postgres needed)."""
 
 import pathlib
-import re
 import uuid
 from datetime import datetime, time, timezone
 
@@ -12,6 +11,7 @@ from fastapi.testclient import TestClient
 from app.db import get_conn
 from app.main import app
 from app.routers.academic import MAX_LIST_ROWS, TIMETABLE_MAX_ROWS
+from tests.fakedb import FakeDb
 
 SPEC_PATH = pathlib.Path(__file__).resolve().parents[2] / "docs" / "openapi.yaml"
 SPEC = yaml.safe_load(SPEC_PATH.read_text(encoding="utf-8"))
@@ -27,49 +27,6 @@ REP_ID = uuid.UUID("77777777-7777-7777-7777-777777777777")
 ENTRY_ID = uuid.UUID("88888888-8888-8888-8888-888888888888")
 NOW = datetime(2026, 1, 5, 9, 0, tzinfo=timezone.utc)
 MISSING_ID = uuid.UUID("99999999-9999-9999-9999-999999999999")
-
-
-class FakeCursor:
-    def __init__(self, rows):
-        self._rows = rows
-
-    def fetchall(self):
-        return self._rows
-
-    def fetchone(self):
-        return self._rows[0] if self._rows else None
-
-
-class FakeDb:
-    """Holds rows for the department tables.
-
-    A query goes to the table named after its first FROM. Soft-deleted rows are dropped.
-    Each named param filters the rows with the same column name (None means no filter).
-    Rows are sorted by the ORDER BY columns and cut by LIMIT. The SQL text is checked
-    separately in the tests, so a missing clause still fails.
-    """
-
-    def __init__(self, **tables):
-        self.tables = tables
-        self.queries = []
-        self.params = []
-
-    def execute(self, sql, params=None):
-        params = params or {}
-        self.queries.append(sql)
-        self.params.append(params)
-        table = re.search(r"FROM (\w+)", sql).group(1)
-        rows = [row for row in self.tables.get(table, []) if row["deleted_at"] is None]
-        for name, value in params.items():
-            if name != "limit" and value is not None:
-                rows = [row for row in rows if row.get(name) == value]
-        order = re.search(r"ORDER BY ([^\n]+)", sql)
-        if order:
-            keys = [column.strip().split(".")[-1] for column in order.group(1).split(",")]
-            rows = sorted(rows, key=lambda row: tuple(row[key] for key in keys))
-        if params.get("limit") is not None:
-            rows = rows[: params["limit"]]
-        return FakeCursor(rows)
 
 
 @pytest.fixture(autouse=True)
