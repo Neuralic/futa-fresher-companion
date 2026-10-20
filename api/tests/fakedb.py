@@ -39,7 +39,11 @@ class FakeDb:
         table = re.search(r"FROM (\w+)", sql).group(1)
         rows = [row for row in self.tables.get(table, []) if row["deleted_at"] is None]
         for name, value in params.items():
-            if name not in self.SPECIAL_PARAMS and value is not None:
+            if name in self.SPECIAL_PARAMS or value is None:
+                continue
+            if name.endswith("_like"):
+                rows = [row for row in rows if _like(row[name[: -len("_like")]], value)]
+            else:
                 rows = [row for row in rows if row.get(name) == value]
         if params.get("now") is not None:
             rows = [row for row in rows if _is_live(row, params["now"])]
@@ -57,6 +61,23 @@ def _is_live(row, now):
     if "published_at" not in row:
         return True
     return row["published_at"] <= now and (row["expires_at"] is None or row["expires_at"] > now)
+
+
+def _like(text, pattern):
+    # Same rules as SQL ILIKE: % and _ match any run or one character, and a backslash
+    # makes the next character literal. Case is ignored.
+    regex = []
+    chars = iter(pattern)
+    for char in chars:
+        if char == "\\":
+            regex.append(re.escape(next(chars)))
+        elif char == "%":
+            regex.append(".*")
+        elif char == "_":
+            regex.append(".")
+        else:
+            regex.append(re.escape(char))
+    return re.fullmatch("".join(regex), text, re.IGNORECASE | re.DOTALL) is not None
 
 
 def _sort(rows, order):
