@@ -64,13 +64,21 @@ const dexieStore: PageStore = {
   },
 };
 
+// Only one sync runs at a time. A retry while one is running joins that run.
+let inFlight: Promise<void> | null = null;
+
 /** Pull everything changed since the last sync, page by page, into IndexedDB. */
 export function syncReferenceData(): Promise<void> {
-  return runSync({
-    store: dexieStore,
-    fetchPage: (query) => apiGet<SyncResponse>('/sync', query),
-    onProgress: setSyncProgress,
-  });
+  if (!inFlight) {
+    inFlight = runSync({
+      store: dexieStore,
+      fetchPage: (query, signal) => apiGet<SyncResponse>('/sync', query, signal),
+      onProgress: setSyncProgress,
+    }).finally(() => {
+      inFlight = null;
+    });
+  }
+  return inFlight;
 }
 
 /** Cached announcements that have not expired on this device. Expired rows stay stored. */

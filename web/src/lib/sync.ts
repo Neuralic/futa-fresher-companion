@@ -42,31 +42,41 @@ export type SyncQuery = {
 
 export interface SyncProgress {
   running: boolean;
+  /** True when the last run ended with an error. Cleared when a new run starts. */
+  failed: boolean;
   /** True when no last_sync is stored yet: this is the first sync on this device. */
   firstRun: boolean;
   pages: number;
   rows: number;
 }
 
+/** Longest time one /sync page may take before the request is given up. */
+export const PAGE_TIMEOUT_MS = 20_000;
+
 export interface SyncOptions {
   store: PageStore;
-  fetchPage: (query: SyncQuery) => Promise<SyncResponse>;
+  /** The signal is aborted when the page times out. */
+  fetchPage: (query: SyncQuery, signal: AbortSignal) => Promise<SyncResponse>;
   onProgress?: (progress: SyncProgress) => void;
+  pageTimeoutMs?: number;
 }
 
 /**
  * Pull pages until the server has no next_cursor. Each page is written in one store
  * transaction together with its cursor. last_sync is written only with the last page.
+ * A page that fails or times out is not applied, so the saved cursor stays where it was.
  */
 export async function runSync({
   store,
   fetchPage,
   onProgress = () => {},
+  pageTimeoutMs = PAGE_TIMEOUT_MS,
 }: SyncOptions): Promise<void> {
   const lastSync = await store.getMeta(LAST_SYNC_KEY);
   let cursor = await store.getMeta(CURSOR_KEY);
   const progress: SyncProgress = {
     running: true,
+    failed: false,
     firstRun: lastSync === undefined,
     pages: 0,
     rows: 0,
@@ -78,7 +88,8 @@ export async function runSync({
     for (;;) {
       let page: SyncResponse;
       try {
-        page = await fetchPage(cursor ? { cursor } : lastSync ? { since: lastSync } : {});
+        const query = cursor ? { cursor } : lastSync ? { since: lastSync } : {};
+        page = await fetchWithTimeout(fetchPage, query, pageTimeoutMs);
       } catch (error) {
         if (cursor && !restarted && isCursorRejected(error)) {
           // The saved cursor expired or is malformed. Start again from the stored last_sync,
@@ -107,8 +118,33 @@ export async function runSync({
       if (!next) return;
       cursor = next;
     }
+  } catch (error) {
+    progress.failed = true;
+    throw error;
   } finally {
     onProgress({ ...progress, running: false });
+  }
+}
+
+// Rejects when the page takes longer than timeoutMs, even if fetchPage ignores the signal.
+async function fetchWithTimeout(
+  fetchPage: SyncOptions['fetchPage'],
+  query: SyncQuery,
+  timeoutMs: number,
+): Promise<SyncResponse> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      const error = new DOMException('Sync page timed out', 'TimeoutError');
+      controller.abort(error);
+      reject(error);
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([fetchPage(query, controller.signal), timedOut]);
+  } finally {
+    clearTimeout(timer);
   }
 }
 

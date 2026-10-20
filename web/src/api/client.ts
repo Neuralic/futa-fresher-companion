@@ -33,7 +33,7 @@ function getToken(): string | null {
 export async function request<T>(
   method: string,
   path: string,
-  opts: { query?: Query; body?: unknown } = {},
+  opts: { query?: Query; body?: unknown; signal?: AbortSignal } = {},
 ): Promise<T> {
   if (USE_MOCKS) {
     const { mockRequest } = await import('./mock');
@@ -55,6 +55,7 @@ export async function request<T>(
     method,
     headers,
     body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+    signal: opts.signal,
   });
 
   if (!res.ok) {
@@ -70,5 +71,6 @@ export async function request<T>(
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
 }
 
-export const apiGet = <T>(path: string, query?: Query) => request<T>('GET', path, { query });
+export const apiGet = <T>(path: string, query?: Query, signal?: AbortSignal) =>
+  request<T>('GET', path, { query, signal });
 export const apiPost = <T>(path: string, body?: unknown) => request<T>('POST', path, { body });
