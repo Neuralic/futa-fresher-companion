@@ -2,7 +2,8 @@ import { lazy, Suspense, useEffect } from 'react';
 import { Link, Route, Routes } from 'react-router-dom';
 import FirstSyncScreen from './components/FirstSyncScreen';
 import OfflineBanner from './components/OfflineBanner';
-import { useSyncProgress } from './lib/syncStatus';
+import SyncNotice from './components/SyncNotice';
+import { dismissFirstSync, showFirstSyncScreen, useSyncView } from './lib/syncStatus';
 import Academics from './pages/Academics';
 import Announcements from './pages/Announcements';
 import Home from './pages/Home';
@@ -12,15 +13,23 @@ import Login from './pages/Login';
 const MapPage = lazy(() => import('./pages/MapPage'));
 const Admin = lazy(() => import('./pages/Admin'));
 
+// The offline store (Dexie) is loaded on demand, so it stays out of the first load.
+function retrySync() {
+  import('./lib/offline')
+    .then((m) => m.syncReferenceData())
+    .catch(() => {});
+}
+
 export default function App() {
-  const sync = useSyncProgress();
-  const firstSync = sync.running && sync.firstRun;
+  const sync = useSyncView();
+  const firstSync = showFirstSyncScreen(sync);
 
   useEffect(() => {
     // Prime the offline cache in the background. Fails silently when offline / API not ready.
-    if (navigator.onLine) {
-      import('./lib/offline').then((m) => m.syncReferenceData()).catch(() => {});
-    }
+    if (navigator.onLine) retrySync();
+    // Retry when the connection comes back, so a failed sync does not wait for a reload.
+    window.addEventListener('online', retrySync);
+    return () => window.removeEventListener('online', retrySync);
   }, []);
 
   return (
@@ -33,9 +42,10 @@ export default function App() {
         <Link to="/announcements">Announcements</Link>
         <Link to="/login">Login</Link>
       </nav>
+      <SyncNotice onRetry={retrySync} />
       <main>
         {firstSync ? (
-          <FirstSyncScreen progress={sync} />
+          <FirstSyncScreen progress={sync.progress} onContinue={dismissFirstSync} />
         ) : (
           <Suspense fallback={<p className="muted">Loading…</p>}>
             <Routes>

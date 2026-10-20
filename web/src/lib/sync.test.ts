@@ -255,8 +255,75 @@ describe('runSync', () => {
       onProgress: (progress) => updates.push(progress),
     });
 
-    expect(updates[0]).toEqual({ running: true, firstRun: true, pages: 0, rows: 0 });
-    expect(updates.at(-1)).toEqual({ running: false, firstRun: true, pages: 2, rows: 4 });
+    expect(updates[0]).toEqual({ running: true, failed: false, firstRun: true, pages: 0, rows: 0 });
+    expect(updates.at(-1)).toEqual({
+      running: false,
+      failed: false,
+      firstRun: true,
+      pages: 2,
+      rows: 4,
+    });
+  });
+
+  it('a timed-out page leaves the cursor and last_sync unchanged', async () => {
+    const mem = memoryStore({ [LAST_SYNC_KEY]: OLD_SYNC, [CURSOR_KEY]: 'c1' });
+    const updates: SyncProgress[] = [];
+    let signalSeen: AbortSignal | undefined;
+    // The request for c1 never answers and ignores its signal. The engine must still give up.
+    const stalled = (query: SyncQuery, signal: AbortSignal) => {
+      if (query.cursor !== 'c1') return Promise.resolve(makePage());
+      signalSeen = signal;
+      return new Promise<SyncResponse>(() => {});
+    };
+
+    const error = await runSync({
+      store: mem.store,
+      fetchPage: stalled,
+      pageTimeoutMs: 20,
+      onProgress: (progress) => updates.push(progress),
+    }).catch((caught: unknown) => caught);
+
+    expect((error as Error).name).toBe('TimeoutError');
+    expect(signalSeen?.aborted).toBe(true);
+    expect(mem.meta.get(CURSOR_KEY)).toBe('c1');
+    expect(mem.meta.get(LAST_SYNC_KEY)).toBe(OLD_SYNC);
+    expect(mem.writes).toHaveLength(0);
+    expect(updates.at(-1)).toMatchObject({ running: false, failed: true });
+  });
+
+  it('a retry after a timed-out page resumes from the saved cursor', async () => {
+    const mem = memoryStore();
+    const server = fakeServer([
+      makePage({ full: true, next_cursor: 'c1', faculties: [faculty('f1')] }),
+      makePage({ faculties: [faculty('f2')] }),
+    ]);
+    let firstTry = true;
+    // The first attempt at c1 stalls. Later attempts answer normally.
+    const flaky = (query: SyncQuery) => {
+      if (query.cursor === 'c1' && firstTry) {
+        firstTry = false;
+        return new Promise<SyncResponse>(() => {});
+      }
+      return server.fetchPage(query);
+    };
+
+    await runSync({ store: mem.store, fetchPage: flaky, pageTimeoutMs: 20 }).catch(() => {});
+    expect(mem.meta.get(CURSOR_KEY)).toBe('c1');
+
+    const updates: SyncProgress[] = [];
+    await runSync({
+      store: mem.store,
+      fetchPage: flaky,
+      onProgress: (progress) => updates.push(progress),
+    });
+
+    // The retry asks for c1 and not a full sync from the start.
+    expect(server.requests).toEqual([{}, { cursor: 'c1' }]);
+    expect(updates[0]).toMatchObject({ failed: false, firstRun: true });
+    expect(mem.writes.map((w) => w.clear)).toEqual([true, false]);
+    expect([...mem.tables.faculties.keys()].sort()).toEqual(['f1', 'f2']);
+    expect(mem.meta.get(LAST_SYNC_KEY)).toBe(SERVER_TIME);
+    expect(mem.meta.has(CURSOR_KEY)).toBe(false);
   });
 
   it('a non-422 error on a fresh sync is thrown and changes nothing', async () => {
