@@ -14,3 +14,5 @@ nav a { color: #fff; text-decoration: none; white-space: nowrap; font-size: 14px
 main { padding: 16px; max-width: 720px; margin: 0 auto; }
 .banner { background: #b45309; color: #fff; padding: 8px 16px; font-size: 14px; text-align: center; }
 .muted { color: var(--muted); }
+.first-sync { padding: 24px 0; }
+.first-sync progress { width: 100%; height: 16px; }
