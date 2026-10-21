@@ -4,14 +4,16 @@ import FirstSyncScreen from './components/FirstSyncScreen';
 import OfflineBanner from './components/OfflineBanner';
 import SyncNotice from './components/SyncNotice';
 import { dismissFirstSync, showFirstSyncScreen, useSyncView } from './lib/syncStatus';
-import Academics from './pages/Academics';
 import Announcements from './pages/Announcements';
 import Home from './pages/Home';
 import Login from './pages/Login';
 
 // Heavy / rarely used screens are lazy-loaded to protect the first-load budget.
+// The Academics screens read the offline cache (Dexie), so they load on demand too.
 const MapPage = lazy(() => import('./pages/MapPage'));
 const Admin = lazy(() => import('./pages/Admin'));
+const Academics = lazy(() => import('./pages/Academics'));
+const FacultyDepartments = lazy(() => import('./pages/FacultyDepartments'));
 
 // The offline store (Dexie) is loaded on demand, so it stays out of the first load.
 function retrySync() {
@@ -52,6 +54,7 @@ export default function App() {
               <Route path="/" element={<Home />} />
               <Route path="/map" element={<MapPage />} />
               <Route path="/academics" element={<Academics />} />
+              <Route path="/academics/:facultyId" element={<FacultyDepartments />} />
               <Route path="/announcements" element={<Announcements />} />
               <Route path="/login" element={<Login />} />
               <Route path="/admin" element={<Admin />} />
