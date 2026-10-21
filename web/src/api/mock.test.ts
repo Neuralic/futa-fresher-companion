@@ -6,6 +6,7 @@ import {
   departments,
   faculties,
   lecturers,
+  timetableEntries,
 } from '../mocks/fixtures';
 import type { SyncResponse } from './types';
 import { runSync, type PageStore, type PageWrite, type SyncQuery } from '../lib/sync';
@@ -66,6 +67,7 @@ describe('mock /sync', () => {
       departments.length +
       lecturers.length +
       courses.length +
+      timetableEntries.length +
       buildings.length +
       announcements.length;
     const received = writes.reduce(
@@ -75,6 +77,7 @@ describe('mock /sync', () => {
             'departments',
             'lecturers',
             'courses',
+            'timetable_entries',
             'buildings',
             'announcements',
           ].reduce(
