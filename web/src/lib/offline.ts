@@ -180,6 +180,12 @@ export async function readDepartmentChoices(): Promise<{ id: string; name: strin
   );
 }
 
+/** Schools and departments for the admin announcement pickers. Cache only. */
+export async function readComposerChoices() {
+  const [faculties, departments] = await Promise.all([readFaculties(), readAllDepartments()]);
+  return { faculties, departments };
+}
+
 /** Everything the Announcements screen needs, from the cache only. */
 export async function readAnnouncementsScreen() {
   const [announcements, faculties, departments] = await Promise.all([
