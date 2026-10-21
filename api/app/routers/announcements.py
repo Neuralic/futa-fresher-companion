@@ -2,14 +2,15 @@
 
 import uuid
 from datetime import datetime, timezone
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from psycopg import Connection
+from psycopg import Connection, errors
+from pydantic import BaseModel, BeforeValidator, Field, model_validator
 
+from app.auth_deps import AdminUser
 from app.caching import fresh_public_cache
 from app.db import get_conn
-from app.stubs import not_implemented
 
 router = APIRouter(prefix="/announcements", tags=["announcements"])
 
@@ -79,9 +80,91 @@ def get_announcement(announcement_id: uuid.UUID, conn: DbConn):
     return _announcement(row)
 
 
+def _strip(value: Any) -> Any:
+    return value.strip() if isinstance(value, str) else value
+
+
+class AnnouncementCreate(BaseModel):
+    # published_at is not a field here: the server sets it to now(), and a client value is ignored.
+    title: Annotated[str, BeforeValidator(_strip), Field(min_length=3, max_length=200)]
+    body: Annotated[str, BeforeValidator(_strip), Field(min_length=1, max_length=4000)]
+    scope: Scope
+    faculty_id: uuid.UUID | None = None
+    department_id: uuid.UUID | None = None
+    expires_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def _check_scope_and_expiry(self):
+        # Keep only the id that matches the scope, so a row never carries both.
+        if self.scope == "faculty":
+            if self.faculty_id is None:
+                raise ValueError("faculty_id is needed for scope faculty")
+            self.department_id = None
+        elif self.scope == "department":
+            if self.department_id is None:
+                raise ValueError("department_id is needed for scope department")
+            self.faculty_id = None
+        else:
+            self.faculty_id = None
+            self.department_id = None
+        if self.expires_at is not None:
+            if self.expires_at.tzinfo is None:
+                raise ValueError("expires_at needs a time zone")
+            if self.expires_at <= datetime.now(timezone.utc):
+                raise ValueError("expires_at must be in the future")
+        return self
+
+
+DEPARTMENT_FACULTY = "SELECT faculty_id FROM departments WHERE id = %(id)s AND deleted_at IS NULL"
+INSERT_ANNOUNCEMENT = """
+    INSERT INTO announcements
+        (title, body, scope, faculty_id, department_id, author_id, published_at, expires_at)
+    VALUES (%(title)s, %(body)s, %(scope)s::announcement_scope, %(faculty_id)s::uuid,
+            %(department_id)s::uuid, %(author_id)s::uuid, now(), %(expires_at)s::timestamptz)
+    RETURNING id, title, body, scope, faculty_id, department_id, author_id, published_at,
+              expires_at, verification_status, source, verified_by, verified_at, updated_at
+    """
+
+
 @router.post("", status_code=201)
-def create_announcement():
-    not_implemented()
+def create_announcement(body: AnnouncementCreate, admin: AdminUser, conn: DbConn):
+    if not _may_publish(conn, admin, body):
+        raise HTTPException(status_code=403, detail="You cannot publish for this scope")
+    try:
+        row = conn.execute(
+            INSERT_ANNOUNCEMENT,
+            {
+                "title": body.title,
+                "body": body.body,
+                "scope": body.scope,
+                "faculty_id": body.faculty_id,
+                "department_id": body.department_id,
+                "author_id": admin["id"],
+                "expires_at": body.expires_at,
+            },
+        ).fetchone()
+    except errors.ForeignKeyViolation as error:
+        raise HTTPException(status_code=422, detail="Unknown faculty or department") from error
+    return _announcement(row)
+
+
+def _may_publish(conn: Connection, admin: dict[str, Any], body: AnnouncementCreate) -> bool:
+    """Each admin role publishes only inside its own scope. The database role is the source."""
+    role = admin["role"]
+    if role == "super_admin":
+        return True
+    if role == "sug":
+        return body.scope == "sug"
+    if role == "faculty_admin":
+        if body.scope == "faculty":
+            return body.faculty_id == admin["faculty_id"]
+        if body.scope == "department":
+            row = conn.execute(DEPARTMENT_FACULTY, {"id": body.department_id}).fetchone()
+            return row is not None and row["faculty_id"] == admin["faculty_id"]
+        return False
+    if role == "department_admin":
+        return body.scope == "department" and body.department_id == admin["department_id"]
+    return False
 
 
 def _now() -> datetime:

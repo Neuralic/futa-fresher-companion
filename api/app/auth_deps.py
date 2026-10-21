@@ -40,3 +40,17 @@ def get_current_user(request: Request, conn: DbConn) -> dict[str, Any]:
     if user is None or not user["is_active"]:
         raise _unauthorized("Invalid or expired token")
     return user
+
+
+# Roles that may manage announcements. What each one may publish is checked in the route.
+ADMIN_ROLES = frozenset({"department_admin", "faculty_admin", "sug", "super_admin"})
+
+
+def require_admin(user: Annotated[dict[str, Any], Depends(get_current_user)]) -> dict[str, Any]:
+    # The role comes from the database through get_current_user, not from the token.
+    if user["role"] not in ADMIN_ROLES:
+        raise HTTPException(status_code=403, detail="Admins only")
+    return user
+
+
+AdminUser = Annotated[dict[str, Any], Depends(require_admin)]
