@@ -1,5 +1,13 @@
 // Sample data ONLY for building the UI before the backend exists. Not real FUTA data.
-import type { Announcement, Building, Course, Department, Faculty, Lecturer } from '../api/types';
+import type {
+  Announcement,
+  Building,
+  Course,
+  Department,
+  Faculty,
+  Lecturer,
+  TimetableEntry,
+} from '../api/types';
 
 const now = new Date().toISOString();
 const unverified = { status: 'unverified' as const, source: 'sample data' };
@@ -112,6 +120,51 @@ export const courses: Course[] = [
     units: 1,
     level: 100,
     semester: 2,
+    verification: unverified,
+    updated_at: now,
+  },
+];
+
+export const timetableEntries: TimetableEntry[] = [
+  {
+    id: '00000000-0000-4000-8000-000000000041',
+    department_id: '00000000-0000-4000-8000-000000000011',
+    level: 100,
+    semester: 1,
+    course_id: '00000000-0000-4000-8000-000000000030',
+    day_of_week: 1,
+    start_time: '08:00',
+    end_time: '10:00',
+    venue_building_id: '00000000-0000-4000-8000-000000000101',
+    venue_note: null,
+    verification: unverified,
+    updated_at: now,
+  },
+  {
+    id: '00000000-0000-4000-8000-000000000042',
+    department_id: '00000000-0000-4000-8000-000000000011',
+    level: 100,
+    semester: 2,
+    course_id: '00000000-0000-4000-8000-000000000032',
+    day_of_week: 3,
+    start_time: '14:00',
+    end_time: '16:00',
+    venue_building_id: null,
+    venue_note: 'Sample Lab 2, ground floor',
+    verification: unverified,
+    updated_at: now,
+  },
+  {
+    id: '00000000-0000-4000-8000-000000000043',
+    department_id: '00000000-0000-4000-8000-000000000011',
+    level: 200,
+    semester: 1,
+    course_id: '00000000-0000-4000-8000-000000000031',
+    day_of_week: 2,
+    start_time: '10:00',
+    end_time: '12:00',
+    venue_building_id: null,
+    venue_note: null,
     verification: unverified,
     updated_at: now,
   },

@@ -5,6 +5,7 @@ import {
   departments,
   faculties,
   lecturers,
+  timetableEntries,
 } from '../mocks/fixtures';
 import type { Query } from './client';
 
@@ -51,7 +52,7 @@ function mockSync(query: Query | undefined) {
     courses,
     class_reps: [],
     buildings,
-    timetable_entries: [],
+    timetable_entries: timetableEntries,
     announcements,
   };
   const items = SYNC_COLLECTIONS.flatMap((name) => data[name].map((row) => [name, row] as const));

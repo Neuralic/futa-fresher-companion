@@ -3,11 +3,13 @@ import Dexie, { type Table } from 'dexie';
 import { apiGet } from '../api/client';
 import type {
   Announcement,
+  Building,
   Course,
   Department,
   Faculty,
   Lecturer,
   SyncResponse,
+  TimetableEntry,
 } from '../api/types';
 import { sortByName } from './academicsView';
 import { COLLECTIONS, CURSOR_KEY, LAST_SYNC_KEY, runSync, type PageStore } from './sync';
@@ -139,6 +141,30 @@ export async function readDepartmentScreen(departmentId: string) {
     readLecturers(departmentId),
   ]);
   return { department, courses, lecturers };
+}
+
+/** Saved timetable entries of one department, all levels. Filtering is done by the caller. */
+export async function readTimetable(departmentId: string): Promise<TimetableEntry[]> {
+  return (await db.timetable_entries
+    .where('department_id')
+    .equals(departmentId)
+    .toArray()) as TimetableEntry[];
+}
+
+/** Everything the timetable page needs, from the cache only. */
+export async function readTimetableScreen(departmentId: string) {
+  const [department, entries, courses] = await Promise.all([
+    readDepartment(departmentId),
+    readTimetable(departmentId),
+    readCourses(departmentId),
+  ]);
+  const buildingIds = [
+    ...new Set(entries.map((entry) => entry.venue_building_id).filter((id): id is string => !!id)),
+  ];
+  const buildings = (await db.buildings.bulkGet(buildingIds)).filter(
+    (building): building is Building => building !== undefined,
+  );
+  return { department, entries, courses, buildings };
 }
 
 /** Everything the Announcements screen needs, from the cache only. */

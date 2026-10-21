@@ -95,6 +95,9 @@ function DepartmentPage({ facultyId, departmentId }: { facultyId: string; depart
         )}
       </dl>
       <VerificationNote verification={department.verification} updatedAt={department.updated_at} />
+      <p>
+        <Link to={`/academics/${facultyId}/${departmentId}/timetable`}>Timetable</Link>
+      </p>
 
       <section aria-labelledby="courses-heading">
         <h2 id="courses-heading">Courses</h2>
