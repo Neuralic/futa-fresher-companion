@@ -39,12 +39,49 @@ function parseRetryAfter(value: string | null): number | undefined {
   return value && /^\d+$/.test(value) ? Number(value) : undefined;
 }
 
+/** The longest we wait before the one retry of a busy (503) read. */
+const MAX_RETRY_WAIT_SECONDS = 6;
+
+function pause(seconds: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(new DOMException('Aborted', 'AbortError'));
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new DOMException('Aborted', 'AbortError'));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, seconds * 1000);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
 export async function request<T>(method: string, path: string, opts: RequestOptions = {}): Promise<T> {
   if (USE_MOCKS) {
     const { mockRequest } = await import('./mock');
-    return (await mockRequest(method, path, opts.query)) as T;
+    return (await mockRequest(method, path, opts.query, opts.body)) as T;
   }
 
+  try {
+    return await send<T>(method, path, opts);
+  } catch (error) {
+    // A busy server (503 with Retry-After) gets one more try, for reads only. A write is never
+    // repeated by itself: if the first one did get through, a retry would post it twice.
+    if (
+      method.toUpperCase() === 'GET' &&
+      error instanceof ApiError &&
+      error.status === 503 &&
+      error.retryAfter !== undefined
+    ) {
+      await pause(Math.min(error.retryAfter, MAX_RETRY_WAIT_SECONDS), opts.signal);
+      return send<T>(method, path, opts);
+    }
+    throw error;
+  }
+}
+
+async function send<T>(method: string, path: string, opts: RequestOptions): Promise<T> {
   const params = new URLSearchParams();
   for (const [k, v] of Object.entries(opts.query ?? {})) {
     if (v !== undefined) params.set(k, String(v));

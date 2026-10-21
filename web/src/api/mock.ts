@@ -8,16 +8,20 @@ import {
   timetableEntries,
 } from '../mocks/fixtures';
 import type { Query } from './client';
+import type { AnnouncementCreate, UserRole } from './types';
 
-// A sample student account for mock mode only.
+// A sample account for mock mode only. It is a student unless VITE_MOCK_ROLE says otherwise,
+// so the admin screens can be tried without a backend. Scoped roles get the first sample
+// faculty and department.
+const MOCK_ROLE = (import.meta.env.VITE_MOCK_ROLE || 'student') as UserRole;
 const mockUser = {
   id: '00000000-0000-4000-8000-0000000000ff',
   full_name: 'Sample Student',
   email: 'sample.student@example.com',
-  role: 'student' as const,
+  role: MOCK_ROLE,
   matric_no: null,
-  department_id: null,
-  faculty_id: null,
+  department_id: MOCK_ROLE === 'department_admin' ? departments[0].id : null,
+  faculty_id: MOCK_ROLE === 'faculty_admin' ? faculties[0].id : null,
   level: null,
 };
 
@@ -36,7 +40,12 @@ const SYNC_COLLECTIONS = [
 ] as const;
 
 // Add a case here whenever the UI needs a new endpoint before the backend has it.
-export async function mockRequest(method: string, path: string, query?: Query): Promise<unknown> {
+export async function mockRequest(
+  method: string,
+  path: string,
+  query?: Query,
+  body?: unknown,
+): Promise<unknown> {
   await new Promise((r) => setTimeout(r, 150)); // feel like a real network
   const key = `${method} ${path}`;
 
@@ -47,6 +56,8 @@ export async function mockRequest(method: string, path: string, query?: Query): 
       return buildings;
     case 'GET /announcements':
       return announcements;
+    case 'POST /announcements':
+      return mockPublish(body as AnnouncementCreate);
     case 'POST /auth/login':
       // Mock only: any password works, and the token is not a real one.
       return { access_token: 'mock-token-not-real', token_type: 'bearer', expires_in: 604800 };
@@ -59,6 +70,24 @@ export async function mockRequest(method: string, path: string, query?: Query): 
     default:
       throw new Error(`No mock for ${key}. Add it in src/api/mock.ts`);
   }
+}
+
+// Echoes the new announcement back, shaped like the API's 201. Nothing is stored.
+function mockPublish(input: AnnouncementCreate) {
+  const now = new Date().toISOString();
+  return {
+    id: crypto.randomUUID(),
+    title: input.title,
+    body: input.body,
+    scope: input.scope,
+    faculty_id: input.scope === 'faculty' ? (input.faculty_id ?? null) : null,
+    department_id: input.scope === 'department' ? (input.department_id ?? null) : null,
+    author_id: mockUser.id,
+    published_at: now,
+    expires_at: input.expires_at ?? null,
+    verification: { status: 'unverified' as const, source: 'sample data' },
+    updated_at: now,
+  };
 }
 
 // Same rules as the API: rows in collection order, then in list order, cut into pages.

@@ -6,6 +6,7 @@ import SyncNotice from './components/SyncNotice';
 import { dismissFirstSync, showFirstSyncScreen, useSyncView } from './lib/syncStatus';
 import Home from './pages/Home';
 import { useAuth } from './lib/auth';
+import { isAdminRole } from './lib/composerView';
 
 // Heavy / rarely used screens are lazy-loaded to protect the first-load budget.
 // The Academics screens read the offline cache (Dexie), so they load on demand too.
@@ -50,6 +51,7 @@ export default function App() {
         <Link to="/map">Map</Link>
         <Link to="/academics">Academics</Link>
         <Link to="/announcements">Announcements</Link>
+        {isAdminRole(auth.user?.role) && <Link to="/admin">Admin</Link>}
         {auth.status === 'signed-in' ? (
           <button
             type="button"

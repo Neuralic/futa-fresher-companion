@@ -45,7 +45,8 @@ main h1 { overflow-wrap: anywhere; }
 .form { display: grid; gap: 16px; max-width: 420px; }
 .field { display: grid; gap: 4px; }
 .field label { font-weight: 600; }
-.field input, .field select { min-height: 44px; padding: 8px; font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--muted); border-radius: 4px; max-width: 100%; }
+.field input, .field select, .field textarea { min-height: 44px; padding: 8px; font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--muted); border-radius: 4px; max-width: 100%; }
+.field textarea { resize: vertical; }
 .field-error { color: var(--fg); font-weight: 600; margin: 0; }
 .hint { color: var(--muted); font-size: 14px; margin: 0; }
 .form button { min-height: 44px; padding: 8px 16px; font: inherit; justify-self: start; cursor: pointer; }
