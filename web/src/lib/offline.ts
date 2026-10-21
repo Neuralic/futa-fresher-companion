@@ -1,7 +1,14 @@
 // Offline cache (IndexedDB via Dexie). Loaded lazily from App.tsx to keep the first load small.
 import Dexie, { type Table } from 'dexie';
 import { apiGet } from '../api/client';
-import type { Announcement, Department, Faculty, SyncResponse } from '../api/types';
+import type {
+  Announcement,
+  Course,
+  Department,
+  Faculty,
+  Lecturer,
+  SyncResponse,
+} from '../api/types';
 import { sortByName } from './academicsView';
 import { COLLECTIONS, CURSOR_KEY, LAST_SYNC_KEY, runSync, type PageStore } from './sync';
 import { setSyncProgress } from './syncStatus';
@@ -104,6 +111,34 @@ export async function readDepartments(facultyId: string): Promise<Department[]> 
 /** Every saved department, for looking up names. Reads the cache only. */
 export async function readAllDepartments(): Promise<Department[]> {
   return (await db.departments.toArray()) as Department[];
+}
+
+/** One saved department, or undefined if it is not in the cache. */
+export async function readDepartment(id: string): Promise<Department | undefined> {
+  return (await db.departments.get(id)) as Department | undefined;
+}
+
+/** Saved courses of one department. Sorting is done by the caller. */
+export async function readCourses(departmentId: string): Promise<Course[]> {
+  return (await db.courses.where('department_id').equals(departmentId).toArray()) as Course[];
+}
+
+/** Saved lecturers of one department. Sorting is done by the caller. */
+export async function readLecturers(departmentId: string): Promise<Lecturer[]> {
+  return (await db.lecturers
+    .where('department_id')
+    .equals(departmentId)
+    .toArray()) as Lecturer[];
+}
+
+/** Everything the department page needs, from the cache only. */
+export async function readDepartmentScreen(departmentId: string) {
+  const [department, courses, lecturers] = await Promise.all([
+    readDepartment(departmentId),
+    readCourses(departmentId),
+    readLecturers(departmentId),
+  ]);
+  return { department, courses, lecturers };
 }
 
 /** Everything the Announcements screen needs, from the cache only. */

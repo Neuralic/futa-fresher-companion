@@ -27,6 +27,9 @@ main h1 { overflow-wrap: anywhere; }
 .items li { padding: 12px 0; border-bottom: 1px solid var(--muted); overflow-wrap: anywhere; }
 .items li > a { display: inline-block; min-height: 44px; line-height: 44px; }
 .back-link { display: inline-block; min-height: 44px; line-height: 44px; }
+.facts { margin: 8px 0; }
+.facts dt { font-weight: 600; }
+.facts dd { margin: 0 0 8px 0; overflow-wrap: anywhere; }
 .announcement-title { font-size: 1.1rem; margin: 0; }
 .announcement-toggle { display: block; width: 100%; min-height: 44px; padding: 8px 0; border: 0; background: none; color: var(--fg); font: inherit; font-weight: 600; text-align: left; cursor: pointer; overflow-wrap: anywhere; }
 .announcement-body { white-space: pre-wrap; overflow-wrap: anywhere; margin: 8px 0; }
