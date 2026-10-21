@@ -4,14 +4,13 @@ import uuid
 from datetime import datetime, timezone
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from psycopg import Connection, errors
 from pydantic import BaseModel, BeforeValidator, Field, model_validator
 
 from app.auth_deps import AdminUser
 from app.caching import fresh_public_cache
 from app.db import get_conn
-from app.stubs import not_implemented
 
 router = APIRouter(prefix="/announcements", tags=["announcements"])
 
@@ -81,25 +80,27 @@ def get_announcement(announcement_id: uuid.UUID, conn: DbConn):
     return _announcement(row)
 
 
-# Contract-first stubs: PATCH and DELETE are in docs/openapi.yaml, built in a follow-up PR.
-@router.patch("/{announcement_id}")
-def update_announcement(announcement_id: uuid.UUID):
-    not_implemented()
-
-
-@router.delete("/{announcement_id}", status_code=204)
-def delete_announcement(announcement_id: uuid.UUID):
-    not_implemented()
-
-
 def _strip(value: Any) -> Any:
     return value.strip() if isinstance(value, str) else value
 
 
+TitleText = Annotated[str, BeforeValidator(_strip), Field(min_length=3, max_length=200)]
+BodyText = Annotated[str, BeforeValidator(_strip), Field(min_length=1, max_length=4000)]
+
+
+def _check_expiry(expires_at: datetime | None) -> None:
+    if expires_at is None:
+        return
+    if expires_at.tzinfo is None:
+        raise ValueError("expires_at needs a time zone")
+    if expires_at <= datetime.now(timezone.utc):
+        raise ValueError("expires_at must be in the future")
+
+
 class AnnouncementCreate(BaseModel):
     # published_at is not a field here: the server sets it to now(), and a client value is ignored.
-    title: Annotated[str, BeforeValidator(_strip), Field(min_length=3, max_length=200)]
-    body: Annotated[str, BeforeValidator(_strip), Field(min_length=1, max_length=4000)]
+    title: TitleText
+    body: BodyText
     scope: Scope
     faculty_id: uuid.UUID | None = None
     department_id: uuid.UUID | None = None
@@ -119,11 +120,30 @@ class AnnouncementCreate(BaseModel):
         else:
             self.faculty_id = None
             self.department_id = None
-        if self.expires_at is not None:
-            if self.expires_at.tzinfo is None:
-                raise ValueError("expires_at needs a time zone")
-            if self.expires_at <= datetime.now(timezone.utc):
-                raise ValueError("expires_at must be in the future")
+        _check_expiry(self.expires_at)
+        return self
+
+
+# The only columns PATCH can change. scope, faculty_id, department_id and published_at are
+# not here, so no request can reach them.
+UPDATABLE = ("title", "body", "expires_at")
+
+
+class AnnouncementUpdate(BaseModel):
+    # Only the fields the client sent are changed. Unknown fields are ignored, not applied.
+    title: TitleText | None = None
+    body: BodyText | None = None
+    expires_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def _check_sent_fields(self):
+        sent = self.model_fields_set
+        if not sent.intersection(UPDATABLE):
+            raise ValueError("send at least one of title, body, expires_at")
+        for name in ("title", "body"):
+            if name in sent and getattr(self, name) is None:
+                raise ValueError(f"{name} cannot be null")
+        _check_expiry(self.expires_at)  # null is fine: it removes the expiry
         return self
 
 
@@ -140,7 +160,7 @@ INSERT_ANNOUNCEMENT = """
 
 @router.post("", status_code=201)
 def create_announcement(body: AnnouncementCreate, admin: AdminUser, conn: DbConn):
-    if not _may_publish(conn, admin, body):
+    if not _may_publish(conn, admin, body.scope, body.faculty_id, body.department_id):
         raise HTTPException(status_code=403, detail="You cannot publish for this scope")
     try:
         row = conn.execute(
@@ -160,22 +180,93 @@ def create_announcement(body: AnnouncementCreate, admin: AdminUser, conn: DbConn
     return _announcement(row)
 
 
-def _may_publish(conn: Connection, admin: dict[str, Any], body: AnnouncementCreate) -> bool:
+STORED_SCOPE = """
+    SELECT scope, faculty_id, department_id
+    FROM announcements
+    WHERE id = %(id)s AND deleted_at IS NULL
+    """
+# Fixed fragments: the SET list is built from these, never from request keys.
+SET_CLAUSES = {
+    "title": "title = %(title)s",
+    "body": "body = %(body)s",
+    "expires_at": "expires_at = %(expires_at)s::timestamptz",
+}
+# The updated_at trigger on announcements bumps updated_at, so /sync sees the edit.
+UPDATE_ANNOUNCEMENT = """
+    WHERE id = %(id)s AND deleted_at IS NULL
+    RETURNING id, title, body, scope, faculty_id, department_id, author_id, published_at,
+              expires_at, verification_status, source, verified_by, verified_at, updated_at
+    """
+# The same trigger bumps updated_at here, so /sync sends the id in `deleted`.
+SOFT_DELETE_ANNOUNCEMENT = """
+    UPDATE announcements SET deleted_at = now()
+    WHERE id = %(id)s AND deleted_at IS NULL
+    RETURNING id
+    """
+
+
+@router.patch("/{announcement_id}")
+def update_announcement(
+    announcement_id: uuid.UUID, body: AnnouncementUpdate, admin: AdminUser, conn: DbConn
+):
+    _require_may_manage(conn, admin, announcement_id)
+    changes = body.model_dump(exclude_unset=True)
+    set_list = ", ".join(SET_CLAUSES[column] for column in UPDATABLE if column in changes)
+    row = conn.execute(
+        "UPDATE announcements SET " + set_list + UPDATE_ANNOUNCEMENT,
+        {"id": announcement_id, **changes},
+    ).fetchone()
+    if row is None:  # deleted between the check and the update
+        raise HTTPException(status_code=404, detail="Announcement not found")
+    return _announcement(row)
+
+
+@router.delete("/{announcement_id}", status_code=204)
+def delete_announcement(announcement_id: uuid.UUID, admin: AdminUser, conn: DbConn):
+    _require_may_manage(conn, admin, announcement_id)
+    row = conn.execute(SOFT_DELETE_ANNOUNCEMENT, {"id": announcement_id}).fetchone()
+    if row is None:  # deleted between the check and the update
+        raise HTTPException(status_code=404, detail="Announcement not found")
+    return Response(status_code=204)
+
+
+def _require_may_manage(conn: Connection, admin: dict[str, Any], announcement_id: uuid.UUID):
+    """404 if the row is missing or deleted, then 403 if it is outside this admin's scope.
+
+    Existence is checked first, so a 403 only ever reveals a row that exists. The scope is
+    read from the stored row, never from the request.
+    """
+    stored = conn.execute(STORED_SCOPE, {"id": announcement_id}).fetchone()
+    if stored is None:
+        raise HTTPException(status_code=404, detail="Announcement not found")
+    if not _may_publish(
+        conn, admin, stored["scope"], stored["faculty_id"], stored["department_id"]
+    ):
+        raise HTTPException(status_code=403, detail="You cannot change this announcement")
+
+
+def _may_publish(
+    conn: Connection,
+    admin: dict[str, Any],
+    scope: str,
+    faculty_id: uuid.UUID | None,
+    department_id: uuid.UUID | None,
+) -> bool:
     """Each admin role publishes only inside its own scope. The database role is the source."""
     role = admin["role"]
     if role == "super_admin":
         return True
     if role == "sug":
-        return body.scope == "sug"
+        return scope == "sug"
     if role == "faculty_admin":
-        if body.scope == "faculty":
-            return body.faculty_id == admin["faculty_id"]
-        if body.scope == "department":
-            row = conn.execute(DEPARTMENT_FACULTY, {"id": body.department_id}).fetchone()
+        if scope == "faculty":
+            return faculty_id == admin["faculty_id"]
+        if scope == "department":
+            row = conn.execute(DEPARTMENT_FACULTY, {"id": department_id}).fetchone()
             return row is not None and row["faculty_id"] == admin["faculty_id"]
         return False
     if role == "department_admin":
-        return body.scope == "department" and body.department_id == admin["department_id"]
+        return scope == "department" and department_id == admin["department_id"]
     return False
 
 
