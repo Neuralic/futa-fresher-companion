@@ -1,4 +1,4 @@
-import { announcements, buildings, faculties } from '../mocks/fixtures';
+import { announcements, buildings, departments, faculties } from '../mocks/fixtures';
 import type { Query } from './client';
 
 // Rows per /sync page in mock mode. 0 (the default) returns everything in one page.
@@ -39,7 +39,7 @@ export async function mockRequest(method: string, path: string, query?: Query): 
 function mockSync(query: Query | undefined) {
   const data: Record<string, unknown[]> = {
     faculties,
-    departments: [],
+    departments,
     lecturers: [],
     courses: [],
     class_reps: [],

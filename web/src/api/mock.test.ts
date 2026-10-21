@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { announcements, buildings, faculties } from '../mocks/fixtures';
+import { announcements, buildings, departments, faculties } from '../mocks/fixtures';
 import type { SyncResponse } from './types';
 import { runSync, type PageStore, type PageWrite, type SyncQuery } from '../lib/sync';
 
@@ -54,10 +54,11 @@ describe('mock /sync', () => {
 
     await runSync({ store, fetchPage });
 
-    const totalRows = faculties.length + buildings.length + announcements.length;
+    const totalRows =
+      faculties.length + departments.length + buildings.length + announcements.length;
     const received = writes.reduce(
       (sum, w) =>
-        sum + ['faculties', 'buildings', 'announcements'].reduce(
+        sum + ['faculties', 'departments', 'buildings', 'announcements'].reduce(
           (n, name) => n + w.page[name as 'faculties'].length,
           0,
         ),

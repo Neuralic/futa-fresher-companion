@@ -1,5 +1,5 @@
 // Sample data ONLY for building the UI before the backend exists. Not real FUTA data.
-import type { Announcement, Building, Faculty } from '../api/types';
+import type { Announcement, Building, Department, Faculty } from '../api/types';
 
 const now = new Date().toISOString();
 const unverified = { status: 'unverified' as const, source: 'sample data' };
@@ -16,6 +16,39 @@ export const faculties: Faculty[] = [
     id: '00000000-0000-4000-8000-000000000002',
     name: 'Sample Faculty of Engineering',
     short_name: 'SEET',
+    verification: unverified,
+    updated_at: now,
+  },
+];
+
+export const departments: Department[] = [
+  {
+    id: '00000000-0000-4000-8000-000000000011',
+    faculty_id: '00000000-0000-4000-8000-000000000001',
+    name: 'Sample Department of Biology',
+    short_name: 'SBIO',
+    hod_name: 'Prof. Sample Head',
+    office_location: 'Sample Block A, Room 2',
+    verification: unverified,
+    updated_at: now,
+  },
+  {
+    id: '00000000-0000-4000-8000-000000000012',
+    faculty_id: '00000000-0000-4000-8000-000000000001',
+    name: 'Sample Department of Chemistry',
+    short_name: null,
+    hod_name: null,
+    office_location: null,
+    verification: unverified,
+    updated_at: now,
+  },
+  {
+    id: '00000000-0000-4000-8000-000000000013',
+    faculty_id: '00000000-0000-4000-8000-000000000002',
+    name: 'Sample Department of Electrical Engineering',
+    short_name: 'SEEE',
+    hod_name: null,
+    office_location: null,
     verification: unverified,
     updated_at: now,
   },
