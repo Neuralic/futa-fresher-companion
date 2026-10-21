@@ -19,10 +19,15 @@ const UPDATED_DATE = new Intl.DateTimeFormat('en-NG', {
   timeZone: 'Africa/Lagos',
 });
 
-export function formatUpdated(iso: string): string {
+/** "21 Oct 2026" in Nigerian local time, or null when the value is not a date. */
+export function formatDay(iso: string): string | null {
   const when = new Date(iso);
-  if (Number.isNaN(when.getTime())) return 'Updated date unknown';
-  return `Updated ${UPDATED_DATE.format(when)}`;
+  return Number.isNaN(when.getTime()) ? null : UPDATED_DATE.format(when);
+}
+
+export function formatUpdated(iso: string): string {
+  const day = formatDay(iso);
+  return day ? `Updated ${day}` : 'Updated date unknown';
 }
 
 const NAME_ORDER = new Intl.Collator('en', { sensitivity: 'base', numeric: true });

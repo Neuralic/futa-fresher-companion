@@ -101,6 +101,21 @@ export async function readDepartments(facultyId: string): Promise<Department[]> 
   return sortByName(rows);
 }
 
+/** Every saved department, for looking up names. Reads the cache only. */
+export async function readAllDepartments(): Promise<Department[]> {
+  return (await db.departments.toArray()) as Department[];
+}
+
+/** Everything the Announcements screen needs, from the cache only. */
+export async function readAnnouncementsScreen() {
+  const [announcements, faculties, departments] = await Promise.all([
+    readCachedAnnouncements(),
+    readFaculties(),
+    readAllDepartments(),
+  ]);
+  return { announcements, faculties, departments };
+}
+
 /** Cached announcements that have not expired on this device. Expired rows stay stored. */
 export async function readCachedAnnouncements(): Promise<Announcement[]> {
   const rows = (await db.announcements.toArray()) as Announcement[];
