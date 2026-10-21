@@ -1,6 +1,7 @@
 import logging
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
@@ -44,6 +45,22 @@ def _database_unavailable(request: Request, exc: Exception) -> JSONResponse:
 
 for _db_error in (PoolTimeout, OperationalError):
     app.add_exception_handler(_db_error, _database_unavailable)
+
+
+@app.exception_handler(RequestValidationError)
+async def _invalid_input(request: Request, exc: RequestValidationError) -> JSONResponse:
+    # FastAPI's default body echoes each bad value back, which would repeat a password or email.
+    errors = [{"type": e["type"], "loc": e["loc"], "msg": e["msg"]} for e in exc.errors()]
+    return JSONResponse(status_code=422, content={"detail": errors})
+
+
+@app.middleware("http")
+async def _no_store_for_auth(request: Request, call_next):
+    # Added here, not in the router, so error responses carry it too.
+    response = await call_next(request)
+    if request.url.path.startswith(f"{API_PREFIX}/auth"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.get(f"{API_PREFIX}/health", tags=["system"])
