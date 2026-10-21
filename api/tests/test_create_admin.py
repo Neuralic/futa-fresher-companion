@@ -181,3 +181,241 @@ def test_yes_confirms(answer):
 @pytest.mark.parametrize("answer", ["", "y", "YES", "Yes", "no", "yes please", "1"])
 def test_anything_else_stops(answer):
     assert admin.is_confirmed(answer) is False
+
+
+# ---- run() and main() with a fake connection
+
+USER_ID = uuid.UUID("33333333-3333-4333-8333-333333333333")
+OWNING_FACULTY = uuid.UUID("44444444-4444-4444-8444-444444444444")
+
+
+class _Result:
+    def __init__(self, row):
+        self._row = row
+
+    def fetchone(self):
+        return self._row
+
+
+class FakeConn:
+    """Answers by which SQL was sent, and returns dict rows like psycopg's dict_row does."""
+
+    def __init__(self, existing=None, faculty_exists=True, department_faculty=OWNING_FACULTY):
+        self.existing = existing
+        self.faculty_exists = faculty_exists
+        self.department_faculty = department_faculty
+        self.calls = []
+        self.committed = self.rolled_back = self.closed = False
+
+    def execute(self, sql, params=None):
+        self.calls.append((sql, params))
+        if sql == admin.FIND_USER:
+            return _Result(self.existing)
+        if sql == admin.LIVE_FACULTY:
+            return _Result({"?column?": 1} if self.faculty_exists else None)
+        if sql == admin.LIVE_DEPARTMENT:
+            row = {"faculty_id": self.department_faculty} if self.department_faculty else None
+            return _Result(row)
+        if sql in (admin.INSERT_USER, admin.UPDATE_ROLE_AND_SCOPE):
+            return _Result({"id": USER_ID, "role": params["role"]})
+        raise AssertionError(f"unexpected SQL: {sql}")
+
+    def commit(self):
+        self.committed = True
+
+    def rollback(self):
+        self.rolled_back = True
+
+    def close(self):
+        self.closed = True
+
+    def writes(self):
+        return [c for c in self.calls if c[0] in (admin.INSERT_USER, admin.UPDATE_ROLE_AND_SCOPE)]
+
+
+def _args(*argv):
+    return admin.build_parser().parse_args(["--email", "Ada@Example.com", *argv])
+
+
+def _existing(**fields):
+    row = {"id": USER_ID, "role": "student", "faculty_id": None, "department_id": None}
+    row["is_active"] = True
+    row.update(fields)
+    return row
+
+
+@pytest.fixture
+def prompts(monkeypatch):
+    monkeypatch.setattr("builtins.input", lambda _prompt="": "yes")
+    monkeypatch.setattr(admin.getpass, "getpass", lambda _prompt="": PASSWORD)
+    monkeypatch.setattr(admin, "hash_password", lambda password: f"hashed::{len(password)}")
+
+
+def test_create_super_admin_with_dict_rows(prompts, capsys):
+    conn = FakeConn()
+
+    code, commit = admin.run(
+        conn, _args("--name", "Ada Obi", "--role", "super_admin"), "ep-example.example.com"
+    )
+
+    (_, params) = conn.writes()[0]
+    assert (code, commit) == (0, True)
+    assert params["email"] == "ada@example.com"
+    assert params["role"] == "super_admin"
+    assert params["password_hash"] == f"hashed::{len(PASSWORD)}"
+    out = capsys.readouterr().out
+    assert f"User id {USER_ID}, role super_admin" in out
+    assert PASSWORD not in out
+
+
+def test_promote_changes_only_role_and_scope(prompts):
+    conn = FakeConn(existing=_existing())
+
+    code, commit = admin.run(
+        conn, _args("--role", "super_admin", "--promote"), "ep-example.example.com"
+    )
+
+    sql, params = conn.writes()[0]
+    assert (code, commit) == (0, True)
+    assert sql == admin.UPDATE_ROLE_AND_SCOPE
+    assert set(params) == {"id", "role", "faculty_id", "department_id"}
+    assert "password" not in sql and "is_active" not in sql
+
+
+def test_existing_user_without_promote_changes_nothing(prompts):
+    conn = FakeConn(existing=_existing())
+
+    code, commit = admin.run(conn, _args("--name", "Ada Obi", "--role", "sug"), "h")
+
+    assert (code, commit) == (1, False)
+    assert conn.writes() == []
+
+
+def test_inactive_user_is_flagged_not_changed(prompts, capsys):
+    conn = FakeConn(existing=_existing(is_active=False))
+
+    admin.run(conn, _args("--role", "sug", "--promote"), "ep-example.example.com")
+
+    assert "inactive" in capsys.readouterr().out
+    assert "is_active" not in conn.writes()[0][0]
+
+
+def test_department_admin_takes_its_faculty_from_the_department(prompts):
+    conn = FakeConn()
+
+    code, commit = admin.run(
+        conn,
+        _args("--name", "Ada Obi", "--role", "department_admin", "--department-id", DEPARTMENT),
+        "ep-example.example.com",
+    )
+
+    _, params = conn.writes()[0]
+    assert (code, commit) == (0, True)
+    assert params["department_id"] == uuid.UUID(DEPARTMENT)
+    assert params["faculty_id"] == OWNING_FACULTY
+
+
+def test_department_admin_with_a_missing_department_is_refused(prompts):
+    conn = FakeConn(department_faculty=None)
+
+    code, commit = admin.run(
+        conn,
+        _args("--name", "Ada Obi", "--role", "department_admin", "--department-id", DEPARTMENT),
+        "h",
+    )
+
+    assert (code, commit) == (1, False)
+    assert conn.writes() == []
+
+
+def test_faculty_admin_is_checked_and_scoped(prompts):
+    conn = FakeConn()
+
+    code, _ = admin.run(
+        conn,
+        _args("--name", "Ada Obi", "--role", "faculty_admin", "--faculty-id", FACULTY),
+        "ep-example.example.com",
+    )
+
+    _, params = conn.writes()[0]
+    assert code == 0
+    assert params["faculty_id"] == uuid.UUID(FACULTY)
+    assert params["department_id"] is None
+
+
+def test_dry_run_writes_nothing_and_asks_for_no_password(monkeypatch, capsys):
+    def refuse(*_a, **_k):
+        raise AssertionError("a dry run must not prompt")
+
+    monkeypatch.setattr("builtins.input", refuse)
+    monkeypatch.setattr(admin.getpass, "getpass", refuse)
+    for argv in (
+        ["--name", "Ada Obi", "--role", "super_admin", "--dry-run"],
+        ["--role", "department_admin", "--department-id", DEPARTMENT, "--dry-run", "--promote"],
+    ):
+        conn = FakeConn()
+
+        code, commit = admin.run(conn, _args(*argv), "ep-example.example.com")
+
+        assert (code, commit) == (0, False)
+        assert conn.writes() == []
+    assert "Dry run" in capsys.readouterr().out
+
+
+def test_anything_but_yes_stops_before_the_password_prompt(monkeypatch):
+    monkeypatch.setattr("builtins.input", lambda _p="": "no")
+    monkeypatch.setattr(admin.getpass, "getpass", lambda _p="": pytest.fail("asked for a password"))
+    conn = FakeConn()
+
+    code, commit = admin.run(conn, _args("--name", "Ada Obi", "--role", "sug"), "h")
+
+    assert (code, commit) == (1, False)
+    assert conn.writes() == []
+
+
+DIRECT_URL = "postgresql://someone:secretpw@ep-example.example.com/db"
+
+
+def test_main_connects_with_dict_row_and_commits_only_after_a_write(prompts, monkeypatch):
+    from psycopg.rows import dict_row
+
+    seen = {}
+    conn = FakeConn()
+
+    def fake_connect(url, **kwargs):
+        seen.update(kwargs)
+        return conn
+
+    monkeypatch.setattr(admin.psycopg, "connect", fake_connect)
+    monkeypatch.setattr(admin, "database_url", lambda: DIRECT_URL)
+
+    code = admin.main(["--email", "ada@example.com", "--name", "Ada Obi", "--role", "super_admin"])
+
+    assert code == 0
+    assert seen["row_factory"] is dict_row
+    assert conn.committed and not conn.rolled_back and conn.closed
+
+
+def test_main_rolls_back_on_a_dry_run(monkeypatch):
+    conn = FakeConn()
+    monkeypatch.setattr(admin.psycopg, "connect", lambda url, **kw: conn)
+    monkeypatch.setattr(admin, "database_url", lambda: DIRECT_URL)
+
+    code = admin.main(
+        ["--email", "ada@example.com", "--name", "Ada Obi", "--role", "sug", "--dry-run"]
+    )
+
+    assert code == 0
+    assert conn.rolled_back and not conn.committed
+
+
+def test_main_refuses_a_pooled_host_before_connecting(monkeypatch):
+    def must_not_connect(*_a, **_k):
+        pytest.fail("must not connect")
+
+    monkeypatch.setattr(admin.psycopg, "connect", must_not_connect)
+    monkeypatch.setattr(
+        admin, "database_url", lambda: DIRECT_URL.replace("ep-example", "ep-x-pooler")
+    )
+
+    assert admin.main(["--email", "a@example.com", "--name", "Ada Obi", "--role", "sug"]) == 2

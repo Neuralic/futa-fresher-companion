@@ -39,6 +39,7 @@ sys.path.insert(0, str(ROOT / "db"))
 # ruff: noqa: E402
 import psycopg
 from import_seed import database_url  # same DATABASE_URL handling as db/import_seed.py
+from psycopg.rows import dict_row
 from pydantic import ValidationError
 
 from app.routers.auth import RegisterRequest  # the same rules the API enforces
@@ -252,7 +253,7 @@ def run(conn: psycopg.Connection, args: argparse.Namespace, url_host: str) -> tu
         return 1, False
 
     scope_faculty = scope.faculty_id
-    if scope is not None and args.role in ("faculty_admin", "department_admin"):
+    if args.role in ("faculty_admin", "department_admin"):
         owning_faculty, problems = check_scope_exists(conn, scope, args.role)
         if problems:
             for problem in problems:
@@ -329,7 +330,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     try:
-        conn = psycopg.connect(url, connect_timeout=30)
+        conn = psycopg.connect(url, connect_timeout=30, row_factory=dict_row)
     except psycopg.OperationalError:
         # The driver's message can name the host, so it is not printed.
         print("Not done: could not connect to the database. Check DATABASE_URL.")
