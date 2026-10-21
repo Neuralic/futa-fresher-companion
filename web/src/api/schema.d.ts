@@ -305,10 +305,19 @@ export interface paths {
         get: operations["getAnnouncement"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete an announcement (admin roles only, inside the caller's own scope)
+         * @description Soft delete. The announcement stops appearing in lists and in `/sync` deletions.
+         */
+        delete: operations["deleteAnnouncement"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Edit an announcement (admin roles only, inside the caller's own scope)
+         * @description Only the fields sent are changed. `scope`, `faculty_id`, `department_id` and
+         *     `published_at` cannot be changed.
+         */
+        patch: operations["updateAnnouncement"];
         trace?: never;
     };
     "/admin/verify": {
@@ -565,6 +574,16 @@ export interface components {
             /** Format: date-time */
             expires_at?: string | null;
         };
+        /** @description All fields optional. Scope, faculty_id, department_id and published_at cannot be changed. */
+        AnnouncementUpdate: {
+            title?: string;
+            body?: string;
+            /**
+             * Format: date-time
+             * @description Must be in the future and include a time zone. null removes the expiry.
+             */
+            expires_at?: string | null;
+        };
         VerifyRequest: {
             /** @enum {string} */
             entity_type: "faculties" | "departments" | "lecturers" | "courses" | "class_reps" | "buildings" | "timetable_entries" | "announcements";
@@ -645,6 +664,16 @@ export interface components {
         /** @description Invalid input */
         ValidationError: {
             headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description Database temporarily unavailable. Try again after the `Retry-After` seconds. */
+        ServiceUnavailable: {
+            headers: {
+                "Retry-After"?: number;
                 [name: string]: unknown;
             };
             content: {
@@ -1092,6 +1121,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             422: components["responses"]["ValidationError"];
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     getAnnouncement: {
@@ -1115,6 +1145,59 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+        };
+    };
+    deleteAnnouncement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                announcement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateAnnouncement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                announcement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnnouncementUpdate"];
+            };
+        };
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Announcement"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
         };
     };
     verifyRecord: {

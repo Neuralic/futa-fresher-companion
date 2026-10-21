@@ -11,6 +11,7 @@ from pydantic import BaseModel, BeforeValidator, Field, model_validator
 from app.auth_deps import AdminUser
 from app.caching import fresh_public_cache
 from app.db import get_conn
+from app.stubs import not_implemented
 
 router = APIRouter(prefix="/announcements", tags=["announcements"])
 
@@ -78,6 +79,17 @@ def get_announcement(announcement_id: uuid.UUID, conn: DbConn):
     if row is None:
         raise HTTPException(status_code=404, detail="Announcement not found")
     return _announcement(row)
+
+
+# Contract-first stubs: PATCH and DELETE are in docs/openapi.yaml, built in a follow-up PR.
+@router.patch("/{announcement_id}")
+def update_announcement(announcement_id: uuid.UUID):
+    not_implemented()
+
+
+@router.delete("/{announcement_id}", status_code=204)
+def delete_announcement(announcement_id: uuid.UUID):
+    not_implemented()
 
 
 def _strip(value: Any) -> Any:

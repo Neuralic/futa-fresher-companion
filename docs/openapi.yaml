@@ -323,6 +323,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '422': { $ref: '#/components/responses/ValidationError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
 
   /announcements/{announcement_id}:
     get:
@@ -337,6 +338,44 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Announcement' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [announcements]
+      operationId: updateAnnouncement
+      summary: Edit an announcement (admin roles only, inside the caller's own scope)
+      description: |
+        Only the fields sent are changed. `scope`, `faculty_id`, `department_id` and
+        `published_at` cannot be changed.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: announcement_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AnnouncementUpdate' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Announcement' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+    delete:
+      tags: [announcements]
+      operationId: deleteAnnouncement
+      summary: Delete an announcement (admin roles only, inside the caller's own scope)
+      description: Soft delete. The announcement stops appearing in lists and in `/sync` deletions.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: announcement_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '204': { description: Deleted }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
   /admin/verify:
@@ -450,6 +489,14 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
     ValidationError:
       description: Invalid input
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ServiceUnavailable:
+      description: Database temporarily unavailable. Try again after the `Retry-After` seconds.
+      headers:
+        Retry-After:
+          schema: { type: integer }
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
@@ -642,12 +689,24 @@ components:
       type: object
       required: [title, body, scope]
       properties:
-        title: { type: string, minLength: 3 }
-        body: { type: string, minLength: 1 }
+        title: { type: string, minLength: 3, maxLength: 200 }
+        body: { type: string, minLength: 1, maxLength: 4000 }
         scope: { $ref: '#/components/schemas/AnnouncementScope' }
         faculty_id: { type: string, format: uuid, nullable: true }
         department_id: { type: string, format: uuid, nullable: true }
         expires_at: { type: string, format: date-time, nullable: true }
+
+    AnnouncementUpdate:
+      type: object
+      description: All fields optional. Scope, faculty_id, department_id and published_at cannot be changed.
+      properties:
+        title: { type: string, minLength: 3, maxLength: 200 }
+        body: { type: string, minLength: 1, maxLength: 4000 }
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Must be in the future and include a time zone. null removes the expiry.
 
     VerifyRequest:
       type: object
