@@ -9,6 +9,18 @@ import {
 } from '../mocks/fixtures';
 import type { Query } from './client';
 
+// A sample student account for mock mode only.
+const mockUser = {
+  id: '00000000-0000-4000-8000-0000000000ff',
+  full_name: 'Sample Student',
+  email: 'sample.student@example.com',
+  role: 'student' as const,
+  matric_no: null,
+  department_id: null,
+  faculty_id: null,
+  level: null,
+};
+
 // Rows per /sync page in mock mode. 0 (the default) returns everything in one page.
 // Set VITE_MOCK_SYNC_PAGE_SIZE to a small number to test paging without the backend.
 const MOCK_SYNC_PAGE_SIZE = Number(import.meta.env.VITE_MOCK_SYNC_PAGE_SIZE ?? 0);
@@ -35,6 +47,13 @@ export async function mockRequest(method: string, path: string, query?: Query): 
       return buildings;
     case 'GET /announcements':
       return announcements;
+    case 'POST /auth/login':
+      // Mock only: any password works, and the token is not a real one.
+      return { access_token: 'mock-token-not-real', token_type: 'bearer', expires_in: 604800 };
+    case 'POST /auth/register':
+      return mockUser;
+    case 'GET /auth/me':
+      return mockUser;
     case 'GET /sync':
       return mockSync(query);
     default:

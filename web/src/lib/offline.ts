@@ -167,6 +167,19 @@ export async function readTimetableScreen(departmentId: string) {
   return { department, entries, courses, buildings };
 }
 
+/** Departments for the sign-up picker, A to Z, each with its school name. Cache only. */
+export async function readDepartmentChoices(): Promise<{ id: string; name: string; school: string }[]> {
+  const [departments, faculties] = await Promise.all([readAllDepartments(), readFaculties()]);
+  const schoolNames = new Map(faculties.map((faculty) => [faculty.id, faculty.name]));
+  return sortByName(
+    departments.map((department) => ({
+      id: department.id,
+      name: department.name,
+      school: schoolNames.get(department.faculty_id) ?? '',
+    })),
+  );
+}
+
 /** Everything the Announcements screen needs, from the cache only. */
 export async function readAnnouncementsScreen() {
   const [announcements, faculties, departments] = await Promise.all([
