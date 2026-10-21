@@ -13,4 +13,7 @@ export type Building = S['Building'];
 export type TimetableEntry = S['TimetableEntry'];
 export type Announcement = S['Announcement'];
 export type User = S['User'];
+export type RegisterRequest = S['RegisterRequest'];
+export type LoginRequest = S['LoginRequest'];
+export type TokenResponse = S['TokenResponse'];
 export type SyncResponse = S['SyncResponse'];

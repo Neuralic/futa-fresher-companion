@@ -1,11 +1,14 @@
+import { tokenStore } from '../lib/session';
+
 const BASE = (import.meta.env.VITE_API_URL ?? '') + '/api/v1';
 const USE_MOCKS = import.meta.env.VITE_USE_MOCKS === 'true';
-const TOKEN_KEY = 'futa_token';
 
 export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    /** Seconds to wait before trying again, from the Retry-After header, when the server sent one. */
+    public retryAfter?: number,
   ) {
     super(message);
   }
@@ -13,28 +16,30 @@ export class ApiError extends Error {
 
 export type Query = Record<string, string | number | boolean | undefined>;
 
-export function setToken(token: string | null) {
-  try {
-    if (token) localStorage.setItem(TOKEN_KEY, token);
-    else localStorage.removeItem(TOKEN_KEY);
-  } catch {
-    /* storage unavailable */
-  }
+export interface RequestOptions {
+  query?: Query;
+  body?: unknown;
+  signal?: AbortSignal;
+  /** Send the signed-in user's token. Only for endpoints that need one. Off by default. */
+  auth?: boolean;
 }
 
-function getToken(): string | null {
-  try {
-    return localStorage.getItem(TOKEN_KEY);
-  } catch {
-    return null;
-  }
+type UnauthorizedListener = () => void;
+const unauthorizedListeners = new Set<UnauthorizedListener>();
+
+/** Called when an authenticated request gets a 401. The token has already been cleared. */
+export function onUnauthorized(listener: UnauthorizedListener): () => void {
+  unauthorizedListeners.add(listener);
+  return () => {
+    unauthorizedListeners.delete(listener);
+  };
 }
 
-export async function request<T>(
-  method: string,
-  path: string,
-  opts: { query?: Query; body?: unknown; signal?: AbortSignal } = {},
-): Promise<T> {
+function parseRetryAfter(value: string | null): number | undefined {
+  return value && /^\d+$/.test(value) ? Number(value) : undefined;
+}
+
+export async function request<T>(method: string, path: string, opts: RequestOptions = {}): Promise<T> {
   if (USE_MOCKS) {
     const { mockRequest } = await import('./mock');
     return (await mockRequest(method, path, opts.query)) as T;
@@ -48,8 +53,10 @@ export async function request<T>(
 
   const headers: Record<string, string> = {};
   if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
-  const token = getToken();
-  if (token) headers.Authorization = `Bearer ${token}`;
+  if (opts.auth) {
+    const token = tokenStore.get();
+    if (token) headers.Authorization = `Bearer ${token}`;
+  }
 
   const res = await fetch(`${BASE}${path}${qs ? `?${qs}` : ''}`, {
     method,
@@ -59,6 +66,11 @@ export async function request<T>(
   });
 
   if (!res.ok) {
+    if (res.status === 401 && opts.auth) {
+      // The token is no longer valid (expired, deactivated or revoked).
+      tokenStore.clear();
+      unauthorizedListeners.forEach((listener) => listener());
+    }
     let detail = res.statusText;
     try {
       const data = await res.json();
@@ -66,11 +78,14 @@ export async function request<T>(
     } catch {
       /* non-JSON error body */
     }
-    throw new ApiError(res.status, detail);
+    throw new ApiError(res.status, detail, parseRetryAfter(res.headers.get('Retry-After')));
   }
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
 }
 
+// Public by default: these never send a token.
 export const apiGet = <T>(path: string, query?: Query, signal?: AbortSignal) =>
   request<T>('GET', path, { query, signal });
-export const apiPost = <T>(path: string, body?: unknown) => request<T>('POST', path, { body });
+
+export const apiPost = <T>(path: string, body?: unknown, opts: { auth?: boolean } = {}) =>
+  request<T>('POST', path, { body, auth: opts.auth });
