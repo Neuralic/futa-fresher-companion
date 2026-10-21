@@ -4,7 +4,6 @@ import FirstSyncScreen from './components/FirstSyncScreen';
 import OfflineBanner from './components/OfflineBanner';
 import SyncNotice from './components/SyncNotice';
 import { dismissFirstSync, showFirstSyncScreen, useSyncView } from './lib/syncStatus';
-import Announcements from './pages/Announcements';
 import Home from './pages/Home';
 import Login from './pages/Login';
 
@@ -14,6 +13,8 @@ const MapPage = lazy(() => import('./pages/MapPage'));
 const Admin = lazy(() => import('./pages/Admin'));
 const Academics = lazy(() => import('./pages/Academics'));
 const FacultyDepartments = lazy(() => import('./pages/FacultyDepartments'));
+// Reads the offline cache, so it loads on demand too.
+const Announcements = lazy(() => import('./pages/Announcements'));
 
 // The offline store (Dexie) is loaded on demand, so it stays out of the first load.
 function retrySync() {
