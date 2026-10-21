@@ -80,7 +80,9 @@ function SchoolDepartments({ facultyId }: { facultyId: string }) {
         <ul className="items">
           {departments.map((department) => (
             <li key={department.id}>
-              <strong>{department.name}</strong>
+              <strong>
+                <Link to={`/academics/${facultyId}/${department.id}`}>{department.name}</Link>
+              </strong>
               {department.short_name && <span className="muted"> ({department.short_name})</span>}
               {department.hod_name && <p>Head of department: {department.hod_name}</p>}
               {department.office_location && <p>Office: {department.office_location}</p>}

@@ -13,6 +13,7 @@ const MapPage = lazy(() => import('./pages/MapPage'));
 const Admin = lazy(() => import('./pages/Admin'));
 const Academics = lazy(() => import('./pages/Academics'));
 const FacultyDepartments = lazy(() => import('./pages/FacultyDepartments'));
+const DepartmentDetail = lazy(() => import('./pages/DepartmentDetail'));
 // Reads the offline cache, so it loads on demand too.
 const Announcements = lazy(() => import('./pages/Announcements'));
 
@@ -56,6 +57,10 @@ export default function App() {
               <Route path="/map" element={<MapPage />} />
               <Route path="/academics" element={<Academics />} />
               <Route path="/academics/:facultyId" element={<FacultyDepartments />} />
+              <Route
+                path="/academics/:facultyId/:departmentId"
+                element={<DepartmentDetail />}
+              />
               <Route path="/announcements" element={<Announcements />} />
               <Route path="/login" element={<Login />} />
               <Route path="/admin" element={<Admin />} />
